@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+PYTHON="$ROOT/.venv/bin/python"
+
+case "${1:-help}" in
+  download)  shift; exec "$PYTHON" -m yt_download.cli download "$@" ;;
+  extract)   shift; exec "$PYTHON" -m clip_extraction.cli run "$@" ;;
+  vad-only)  shift; exec "$PYTHON" -m clip_extraction.cli vad-only "$@" ;;
+  editor)
+    shift
+    DIR=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --dir) DIR="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    if [[ -z "$DIR" ]]; then
+      echo "Usage: ./ambara editor --dir data/output/<run-directory>"
+      exit 1
+    fi
+    echo "Starting transcript editor at http://localhost:3000?dir=$DIR"
+    cd "$ROOT/services/transcript-editor"
+    exec npx next dev
+    ;;
+  setup)     python3 -m venv .venv && .venv/bin/pip install --upgrade pip && make install ;;
+  install)   exec make install ;;
+  *)         echo "Usage: ./ambara <command> [options]"
+             echo ""
+             echo "Commands:"
+             echo "  setup      Create venv and install all packages"
+             echo "  install    Install local packages (editable)"
+             echo "  download   Download YouTube audio as 16kHz mono WAV"
+             echo "  extract    Run full clip extraction pipeline"
+             echo "  vad-only   Run VAD detection only"
+             echo "  editor     Open transcript correction UI"
+             echo ""
+             echo "Examples:"
+             echo "  ./ambara download 'https://youtube.com/watch?v=...' -l church-mass"
+             echo "  ./ambara extract --input data/input/church-mass.wav --output data/output/ --device mps -v"
+             echo "  ./ambara vad-only --input test.wav --output data/vad_segments.json"
+             echo "  ./ambara editor --dir data/output/20260222_201500_test"
+             ;;
+esac
