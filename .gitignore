@@ -9,6 +9,9 @@ build/
 *.mp4
 data/input/
 data/output/
+data/*.json
 *.pt
 *.bin
+node_modules/
+.next/
 .DS_Store
