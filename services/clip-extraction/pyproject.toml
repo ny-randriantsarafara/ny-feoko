@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clip-extraction"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "ny-feoko-shared",
+    "torch>=2.10",
+    "torchaudio>=2.10",
+    "transformers>=4.40",
+    "typer>=0.12",
+    "rich>=13",
+    "pydantic>=2.0",
+    "soundfile>=0.12",
+    "pandas>=2.2",
+]
+
+[project.scripts]
+extract-clips = "clip_extraction.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clip_extraction"]
