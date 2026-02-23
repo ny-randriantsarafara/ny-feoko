@@ -1,18 +1,13 @@
 "use client";
 
-interface Clip {
-  id: number;
-  file_name: string;
-  duration_sec: number;
-  transcription: string;
-  speech_score: number;
-  status: "pending" | "corrected" | "discarded";
-}
+import type { Tables } from "@/lib/supabase/types";
+
+type Clip = Tables<"clips">;
 
 interface ClipListProps {
   clips: Clip[];
-  selectedId: number | null;
-  onSelect: (id: number) => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -59,11 +54,11 @@ export default function ClipList({ clips, selectedId, onSelect }: ClipListProps)
             <span style={{ fontFamily: "monospace" }}>
               {clip.file_name.replace("clips/", "")}
             </span>
-            <span style={{ color: "#666" }}>{clip.duration_sec.toFixed(1)}s</span>
+            <span style={{ color: "#666" }}>{(clip.duration_sec ?? 0).toFixed(1)}s</span>
           </div>
-          {clip.transcription && (
+          {(clip.corrected_transcription ?? clip.draft_transcription) && (
             <div style={{ color: "#888", fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {clip.transcription}
+              {clip.corrected_transcription ?? clip.draft_transcription}
             </div>
           )}
         </div>

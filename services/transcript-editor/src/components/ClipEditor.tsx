@@ -1,16 +1,9 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
+import type { Tables } from "@/lib/supabase/types";
 
-interface Clip {
-  id: number;
-  file_name: string;
-  duration_sec: number;
-  transcription: string;
-  speech_score: number;
-  music_score: number;
-  status: "pending" | "corrected" | "discarded";
-}
+type Clip = Tables<"clips">;
 
 interface ClipEditorProps {
   clip: Clip;
@@ -23,18 +16,16 @@ interface ClipEditorProps {
 export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: ClipEditorProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const [text, setText] = useState(clip.transcription);
+  const [text, setText] = useState(clip.corrected_transcription ?? clip.draft_transcription ?? "");
   const [saving, setSaving] = useState(false);
   const [playing, setPlaying] = useState(false);
 
-  // Reset text when clip changes
   useEffect(() => {
-    setText(clip.transcription);
+    setText(clip.corrected_transcription ?? clip.draft_transcription ?? "");
     setPlaying(false);
-    // Auto-play new clip
     audioRef.current?.play().then(() => setPlaying(true)).catch(() => {});
     textRef.current?.focus();
-  }, [clip.id, clip.transcription]);
+  }, [clip.id, clip.corrected_transcription, clip.draft_transcription]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
@@ -61,7 +52,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
     onNext();
   }, [text, onSave, onNext]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isCtrl = e.ctrlKey || e.metaKey;
@@ -93,15 +83,14 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
 
   return (
     <div style={{ flex: 1, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 style={{ margin: 0, fontFamily: "monospace", fontSize: 18 }}>
           {clip.file_name.replace("clips/", "")}
         </h2>
         <div style={{ display: "flex", gap: 12, fontSize: 13, color: "#888" }}>
-          <span>Speech: {(clip.speech_score * 100).toFixed(0)}%</span>
-          <span>Music: {(clip.music_score * 100).toFixed(0)}%</span>
-          <span>{clip.duration_sec.toFixed(1)}s</span>
+          <span>Speech: {((clip.speech_score ?? 0) * 100).toFixed(0)}%</span>
+          <span>Music: {((clip.music_score ?? 0) * 100).toFixed(0)}%</span>
+          <span>{(clip.duration_sec ?? 0).toFixed(1)}s</span>
           <span style={{
             padding: "2px 8px",
             borderRadius: 4,
@@ -114,7 +103,23 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
         </div>
       </div>
 
-      {/* Audio player */}
+      {clip.draft_transcription && (
+        <div style={{
+          padding: 12,
+          background: "#1a1a2e",
+          border: "1px solid #2a2a4a",
+          borderRadius: 8,
+          fontSize: 14,
+          color: "#a0a0c0",
+          lineHeight: 1.5,
+        }}>
+          <span style={{ fontSize: 11, color: "#666", display: "block", marginBottom: 4 }}>
+            Draft (Whisper)
+          </span>
+          {clip.draft_transcription}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <button onClick={togglePlay} style={btnStyle}>
           {playing ? "Pause" : "Play"}
@@ -133,7 +138,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
         />
       </div>
 
-      {/* Transcription textarea */}
       <textarea
         ref={textRef}
         value={text}
@@ -154,7 +158,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
         }}
       />
 
-      {/* Action buttons */}
       <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onPrev} style={btnStyle}>
@@ -181,7 +184,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
         </div>
       </div>
 
-      {/* Shortcuts legend */}
       <div style={{ fontSize: 12, color: "#555", display: "flex", gap: 16 }}>
         <span>Space: play/pause</span>
         <span>Ctrl+Enter: save & next</span>
