@@ -219,6 +219,55 @@ By run label:
 
 Exports only `status = corrected`.
 
+## Database management
+
+### Delete a run
+
+Remove a single run and all its clips, edit history, and storage files:
+
+```bash
+# By label
+./ambara delete-run --label 20260222_201500_jan-test
+
+# By UUID
+./ambara delete-run --run <run-uuid>
+
+# Skip confirmation
+./ambara delete-run --label 20260222_201500_jan-test --yes
+```
+
+Shows clip count and corrected count before confirming.
+
+### Reset everything
+
+Wipe all runs, clips, edits, and storage objects. Irreversible:
+
+```bash
+./ambara reset
+```
+
+Prints totals (runs, clips, edits) and asks for confirmation. Pass `--yes` to skip:
+
+```bash
+./ambara reset --yes
+```
+
+### Clean up orphans
+
+Find and remove orphaned data:
+
+- **Empty runs**: runs with zero clips (e.g. sync was interrupted)
+- **Orphan storage**: storage prefixes with no matching run in the database
+
+```bash
+./ambara cleanup
+
+# Skip confirmation
+./ambara cleanup --yes
+```
+
+Prints what it found before asking to proceed.
+
 ## Transcript editor (Supabase)
 
 A web app for correcting draft transcripts from Supabase.
