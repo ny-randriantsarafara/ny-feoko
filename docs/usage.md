@@ -295,13 +295,15 @@ A web app for correcting draft transcripts from Supabase.
 
 ### Keyboard shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Space` | Play / pause audio |
-| `Ctrl+Enter` | Save transcription and go to next clip |
-| `Ctrl+←` / `Ctrl+→` | Previous / next clip |
-| `Ctrl+R` | Replay audio from start |
-| `Ctrl+D` | Discard clip (mark as bad, skip for training) |
+Shortcuts are displayed based on your platform. On macOS, use the Command key (⌘); on other platforms, use Ctrl.
+
+| Action | macOS | Windows/Linux |
+|--------|-------|---------------|
+| Play / pause audio | `Space` | `Space` |
+| Save transcription and go to next clip | `⌘Enter` | `Ctrl+Enter` |
+| Previous / next clip | `⌘←` / `⌘→` | `Ctrl+←` / `Ctrl+→` |
+| Replay audio from start | `⌘R` | `Ctrl+R` |
+| Discard clip (mark as bad, skip for training) | `⌘D` | `Ctrl+D` |
 
 ## Project structure
 

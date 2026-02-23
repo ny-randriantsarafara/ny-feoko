@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import type { Tables } from "@/lib/supabase/types";
+import { useShortcutLabels } from "@/hooks/useShortcutLabels";
 
 type Clip = Tables<"clips">;
 
@@ -19,6 +20,7 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
   const [text, setText] = useState(clip.corrected_transcription ?? clip.draft_transcription ?? "");
   const [saving, setSaving] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const { labels } = useShortcutLabels();
 
   useEffect(() => {
     setText(clip.corrected_transcription ?? clip.draft_transcription ?? "");
@@ -82,49 +84,44 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
   }, [handleSave, onNext, onPrev, replay, togglePlay]);
 
   return (
-    <div style={{ flex: 1, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 style={{ margin: 0, fontFamily: "monospace", fontSize: 18 }}>
+    <div className="flex-1 p-4 md:p-6 flex flex-col gap-4">
+      {/* Header with file name and metadata */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+        <h2 className="m-0 font-mono text-base md:text-lg truncate">
           {clip.file_name.replace("clips/", "")}
         </h2>
-        <div style={{ display: "flex", gap: 12, fontSize: 13, color: "#888" }}>
+        <div className="flex flex-wrap gap-2 md:gap-3 text-xs md:text-sm text-gray-400">
           <span>Speech: {((clip.speech_score ?? 0) * 100).toFixed(0)}%</span>
           <span>Music: {((clip.music_score ?? 0) * 100).toFixed(0)}%</span>
           <span>{(clip.duration_sec ?? 0).toFixed(1)}s</span>
-          <span style={{
-            padding: "2px 8px",
-            borderRadius: 4,
-            background: clip.status === "corrected" ? "#166534" : clip.status === "discarded" ? "#7f1d1d" : "#374151",
-            color: "white",
-            fontSize: 12,
-          }}>
+          <span
+            className={`px-2 py-0.5 rounded text-xs text-white ${
+              clip.status === "corrected"
+                ? "bg-green-800"
+                : clip.status === "discarded"
+                ? "bg-red-900"
+                : "bg-gray-700"
+            }`}
+          >
             {clip.status}
           </span>
         </div>
       </div>
 
+      {/* Draft transcription reference */}
       {clip.draft_transcription && (
-        <div style={{
-          padding: 12,
-          background: "#1a1a2e",
-          border: "1px solid #2a2a4a",
-          borderRadius: 8,
-          fontSize: 14,
-          color: "#a0a0c0",
-          lineHeight: 1.5,
-        }}>
-          <span style={{ fontSize: 11, color: "#666", display: "block", marginBottom: 4 }}>
-            Draft (Whisper)
-          </span>
+        <div className="p-3 bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg text-sm text-[#a0a0c0] leading-relaxed">
+          <span className="text-xs text-gray-500 block mb-1">Draft (Whisper)</span>
           {clip.draft_transcription}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button onClick={togglePlay} style={btnStyle}>
+      {/* Audio controls */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <button onClick={togglePlay} className="btn">
           {playing ? "Pause" : "Play"}
         </button>
-        <button onClick={replay} style={btnStyle}>
+        <button onClick={replay} className="btn">
           Replay
         </button>
         <audio
@@ -133,74 +130,55 @@ export default function ClipEditor({ clip, audioUrl, onSave, onNext, onPrev }: C
           onEnded={() => setPlaying(false)}
           onPause={() => setPlaying(false)}
           onPlay={() => setPlaying(true)}
-          style={{ flex: 1 }}
+          className="flex-1 min-w-0 max-w-full"
           controls
         />
       </div>
 
+      {/* Transcription textarea */}
       <textarea
         ref={textRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Type the Malagasy transcription here..."
-        style={{
-          flex: 1,
-          minHeight: 200,
-          padding: 16,
-          fontSize: 18,
-          lineHeight: 1.6,
-          fontFamily: "system-ui",
-          background: "#1e1e1e",
-          color: "#e0e0e0",
-          border: "1px solid #333",
-          borderRadius: 8,
-          resize: "vertical",
-        }}
+        className="flex-1 min-h-[150px] md:min-h-[200px] p-4 text-base md:text-lg leading-relaxed font-sans bg-[#1e1e1e] text-gray-200 border border-gray-700 rounded-lg resize-y focus:outline-none focus:border-blue-500"
       />
 
-      <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onPrev} style={btnStyle}>
-            Prev (Ctrl+←)
+      {/* Action buttons */}
+      <div className="flex flex-col sm:flex-row gap-2 sm:justify-between">
+        <div className="flex gap-2">
+          <button onClick={onPrev} className="btn flex-1 sm:flex-none">
+            Prev ({labels.prev})
           </button>
-          <button onClick={onNext} style={btnStyle}>
-            Next (Ctrl+→)
+          <button onClick={onNext} className="btn flex-1 sm:flex-none">
+            Next ({labels.next})
           </button>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="flex gap-2">
           <button
             onClick={() => handleSave("discarded")}
-            style={{ ...btnStyle, background: "#7f1d1d" }}
+            className="btn bg-red-900 hover:bg-red-800 flex-1 sm:flex-none"
           >
-            Discard (Ctrl+D)
+            Discard ({labels.discard})
           </button>
           <button
             onClick={() => handleSave("corrected")}
             disabled={saving}
-            style={{ ...btnStyle, background: "#166534", fontWeight: 700 }}
+            className="btn bg-green-800 hover:bg-green-700 font-bold flex-1 sm:flex-none disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save & Next (Ctrl+Enter)"}
+            {saving ? "Saving..." : `Save & Next (${labels.save})`}
           </button>
         </div>
       </div>
 
-      <div style={{ fontSize: 12, color: "#555", display: "flex", gap: 16 }}>
-        <span>Space: play/pause</span>
-        <span>Ctrl+Enter: save & next</span>
-        <span>Ctrl+←/→: prev/next</span>
-        <span>Ctrl+R: replay</span>
-        <span>Ctrl+D: discard</span>
+      {/* Keyboard shortcuts help */}
+      <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+        <span>{labels.playPause}: play/pause</span>
+        <span>{labels.save}: save & next</span>
+        <span>{labels.prev}/{labels.next.replace(/.*?([←→])/, "$1")}: prev/next</span>
+        <span>{labels.replay}: replay</span>
+        <span>{labels.discard}: discard</span>
       </div>
     </div>
   );
 }
-
-const btnStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  background: "#333",
-  color: "white",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontSize: 13,
-};

@@ -19,6 +19,7 @@ export default function RunEditorPage() {
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -146,9 +147,14 @@ export default function RunEditorPage() {
 
   const selectedClip = clips.find((c) => c.id === selectedId);
 
+  const handleClipSelect = useCallback((id: string) => {
+    setSelectedId(id);
+    setSidebarOpen(false); // Close sidebar on mobile after selection
+  }, []);
+
   if (error) {
     return (
-      <div style={{ padding: 40, color: "#ef4444" }}>
+      <div className="p-10 text-red-500">
         <h2>Error</h2>
         <pre>{error}</pre>
       </div>
@@ -156,25 +162,42 @@ export default function RunEditorPage() {
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-      <div style={{ display: "flex", flexDirection: "column", width: 300, borderRight: "1px solid #333" }}>
-        <div style={{ padding: "8px 16px", borderBottom: "1px solid #333", display: "flex", alignItems: "center" }}>
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden">
+      {/* Mobile header with toggle */}
+      <div className="md:hidden flex items-center justify-between px-4 py-2 border-b border-gray-700 bg-[#111]">
+        <button
+          onClick={() => router.push("/")}
+          className="text-blue-500 text-sm"
+        >
+          ← All runs
+        </button>
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="text-gray-400 text-sm px-2 py-1 border border-gray-600 rounded"
+        >
+          {sidebarOpen ? "Hide clips" : `Clips (${clips.length})`}
+        </button>
+      </div>
+
+      {/* Sidebar - always visible on md+, toggleable on mobile */}
+      <div
+        className={`${
+          sidebarOpen ? "flex" : "hidden"
+        } md:flex flex-col w-full md:w-[300px] border-r border-gray-700 bg-[#111] max-h-[40vh] md:max-h-none overflow-hidden`}
+      >
+        {/* Desktop back link */}
+        <div className="hidden md:flex px-4 py-2 border-b border-gray-700 items-center">
           <button
             onClick={() => router.push("/")}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#3b82f6",
-              cursor: "pointer",
-              fontSize: 13,
-              padding: "4px 0",
-            }}
+            className="text-blue-500 text-sm hover:underline"
           >
             ← All runs
           </button>
         </div>
-        <ClipList clips={clips} selectedId={selectedId} onSelect={setSelectedId} />
+        <ClipList clips={clips} selectedId={selectedId} onSelect={handleClipSelect} />
       </div>
+
+      {/* Main editor area */}
       {selectedClip ? (
         <ClipEditor
           clip={selectedClip}
@@ -184,7 +207,7 @@ export default function RunEditorPage() {
           onPrev={goPrev}
         />
       ) : (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>
+        <div className="flex-1 flex items-center justify-center text-gray-500">
           {clips.length === 0 ? "Loading clips..." : "Select a clip to start editing"}
         </div>
       )}
