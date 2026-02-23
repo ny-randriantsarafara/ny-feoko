@@ -11,7 +11,7 @@ dependencies = []
 [tool.ruff]
 target-version = "py314"
 line-length = 100
-src = ["shared", "services/clip-extraction/src", "services/asr-training/src", "services/mt-training/src"]
+src = ["shared", "services/clip-extraction/src", "services/db-sync/src", "services/asr-training/src", "services/mt-training/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
