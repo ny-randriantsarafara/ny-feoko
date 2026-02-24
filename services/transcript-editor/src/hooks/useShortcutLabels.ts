@@ -14,7 +14,7 @@ const SHORTCUTS = {
   prev: { mac: "⌘←", other: "Ctrl+←" },
   replay: { mac: "⌘R", other: "Ctrl+R" },
   discard: { mac: "⌘D", other: "Ctrl+D" },
-  playPause: { mac: "Space", other: "Space" },
+  playPause: { mac: "⌘Space", other: "Ctrl+Space" },
 };
 
 type ShortcutAction = keyof typeof SHORTCUTS;

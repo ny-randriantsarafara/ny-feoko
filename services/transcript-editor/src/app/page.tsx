@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { formatDuration } from "@/lib/format";
 import type { Tables } from "@/lib/supabase/types";
 
 type Run = Tables<"runs">;
 
 interface RunWithProgress extends Run {
   total_clips: number;
-  corrected_clips: number;
+  done_clips: number;
+  total_duration_sec: number;
 }
 
 export default function RunListPage() {
@@ -32,26 +34,34 @@ export default function RunListPage() {
         return;
       }
 
-      const runsWithProgress: RunWithProgress[] = await Promise.all(
-        (runsData ?? []).map(async (run) => {
-          const { count: total } = await supabase
-            .from("clips")
-            .select("*", { count: "exact", head: true })
-            .eq("run_id", run.id);
+      // Fetch all clips in one query instead of N+1
+      const runIds = (runsData ?? []).map((r) => r.id);
+      const { data: clipsData } = await supabase
+        .from("clips")
+        .select("run_id, status, duration_sec")
+        .in("run_id", runIds);
 
-          const { count: corrected } = await supabase
-            .from("clips")
-            .select("*", { count: "exact", head: true })
-            .eq("run_id", run.id)
-            .eq("status", "corrected");
+      // Aggregate per run
+      const statsMap = new Map<string, { total: number; done: number; duration: number }>();
+      for (const clip of clipsData ?? []) {
+        const stats = statsMap.get(clip.run_id) ?? { total: 0, done: 0, duration: 0 };
+        stats.total += 1;
+        if (clip.status === "corrected" || clip.status === "discarded") {
+          stats.done += 1;
+        }
+        stats.duration += clip.duration_sec ?? 0;
+        statsMap.set(clip.run_id, stats);
+      }
 
-          return {
-            ...run,
-            total_clips: total ?? 0,
-            corrected_clips: corrected ?? 0,
-          };
-        })
-      );
+      const runsWithProgress: RunWithProgress[] = (runsData ?? []).map((run) => {
+        const stats = statsMap.get(run.id) ?? { total: 0, done: 0, duration: 0 };
+        return {
+          ...run,
+          total_clips: stats.total,
+          done_clips: stats.done,
+          total_duration_sec: stats.duration,
+        };
+      });
 
       setRuns(runsWithProgress);
       setLoading(false);
@@ -108,7 +118,7 @@ export default function RunListPage() {
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {runs.map((run) => {
           const progress = run.total_clips > 0
-            ? (run.corrected_clips / run.total_clips) * 100
+            ? (run.done_clips / run.total_clips) * 100
             : 0;
 
           return (
@@ -126,7 +136,7 @@ export default function RunListPage() {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 14, color: "#888" }}>
-                    {run.corrected_clips}/{run.total_clips} clips
+                    {run.done_clips}/{run.total_clips} clips · {formatDuration(run.total_duration_sec)}
                   </div>
                   <div style={{ fontSize: 12, color: "#666" }}>
                     {new Date(run.created_at).toLocaleDateString()}

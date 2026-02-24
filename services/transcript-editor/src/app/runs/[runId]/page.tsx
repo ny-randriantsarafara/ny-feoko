@@ -53,20 +53,19 @@ export default function RunEditorPage() {
 
     setClips(sorted);
 
-    if (sorted.length > 0 && selectedId === null) {
+    setSelectedId((prev) => {
+      if (prev !== null) return prev;
+      if (sorted.length === 0) return null;
       const firstPending = sorted.find((c) => c.status === "pending");
-      setSelectedId(firstPending?.id ?? sorted[0].id);
-    }
-  }, [runId, supabase, selectedId]);
+      return firstPending?.id ?? sorted[0].id;
+    });
+  }, [runId, supabase]);
 
   useEffect(() => {
     fetchClips();
   }, [fetchClips]);
 
   const getAudioUrl = useCallback(async (clip: Clip): Promise<string> => {
-    const cached = audioUrls[clip.id];
-    if (cached) return cached;
-
     const storagePath = `${runId}/${clip.file_name}`;
     const { data } = await supabase.storage
       .from("clips")
@@ -75,7 +74,7 @@ export default function RunEditorPage() {
     const url = data?.signedUrl ?? "";
     setAudioUrls((prev) => ({ ...prev, [clip.id]: url }));
     return url;
-  }, [runId, supabase, audioUrls]);
+  }, [runId, supabase]);
 
   const [currentAudioUrl, setCurrentAudioUrl] = useState("");
 
@@ -83,7 +82,13 @@ export default function RunEditorPage() {
     const selected = clips.find((c) => c.id === selectedId);
     if (!selected) return;
 
-    getAudioUrl(selected).then(setCurrentAudioUrl);
+    const cached = audioUrls[selected.id];
+    if (cached) {
+      setCurrentAudioUrl(cached);
+    } else {
+      getAudioUrl(selected).then(setCurrentAudioUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, clips, getAudioUrl]);
 
   const handleSave = useCallback(
@@ -133,6 +138,26 @@ export default function RunEditorPage() {
     [selectedId, userId, clips, supabase]
   );
 
+  const handleAutoSave = useCallback(
+    async (transcription: string) => {
+      if (!selectedId || !userId) return;
+
+      await supabase
+        .from("clips")
+        .update({ corrected_transcription: transcription })
+        .eq("id", selectedId);
+
+      setClips((prev) =>
+        prev.map((c) =>
+          c.id === selectedId
+            ? { ...c, corrected_transcription: transcription }
+            : c
+        )
+      );
+    },
+    [selectedId, userId, supabase]
+  );
+
   const selectedIndex = clips.findIndex((c) => c.id === selectedId);
 
   const goNext = useCallback(() => {
@@ -146,10 +171,11 @@ export default function RunEditorPage() {
   }, [selectedIndex, clips]);
 
   const selectedClip = clips.find((c) => c.id === selectedId);
+  const isLastClip = selectedIndex === clips.length - 1;
 
   const handleClipSelect = useCallback((id: string) => {
     setSelectedId(id);
-    setSidebarOpen(false); // Close sidebar on mobile after selection
+    setSidebarOpen(false);
   }, []);
 
   if (error) {
@@ -203,8 +229,10 @@ export default function RunEditorPage() {
           clip={selectedClip}
           audioUrl={currentAudioUrl}
           onSave={handleSave}
+          onAutoSave={handleAutoSave}
           onNext={goNext}
           onPrev={goPrev}
+          isLastClip={isLastClip}
         />
       ) : (
         <div className="flex-1 flex items-center justify-center text-gray-500">
