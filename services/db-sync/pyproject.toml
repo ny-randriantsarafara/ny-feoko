@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "db-sync"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "supabase>=2.0",
+    "typer>=0.12",
+    "rich>=13",
+    "pandas>=2.2",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+db-sync = "db_sync.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/db_sync"]

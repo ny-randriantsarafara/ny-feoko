@@ -1,116 +1,188 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
-import ClipList from "@/components/ClipList";
-import ClipEditor from "@/components/ClipEditor";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { formatDuration } from "@/lib/format";
+import type { Tables } from "@/lib/supabase/types";
 
-interface Clip {
-  id: number;
-  file_name: string;
-  duration_sec: number;
-  transcription: string;
-  speech_score: number;
-  music_score: number;
-  corrected: boolean;
-  status: "pending" | "corrected" | "discarded";
+type Run = Tables<"runs">;
+
+interface RunWithProgress extends Run {
+  total_clips: number;
+  done_clips: number;
+  total_duration_sec: number;
 }
 
-export default function Home() {
-  const searchParams = useSearchParams();
-  const dir = searchParams.get("dir") || "";
-
-  const [clips, setClips] = useState<Clip[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+export default function RunListPage() {
+  const [runs, setRuns] = useState<RunWithProgress[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const fetchClips = useCallback(async () => {
-    if (!dir) return;
-    try {
-      const res = await fetch(`/api/clips?dir=${encodeURIComponent(dir)}`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setClips(data);
-      if (data.length > 0 && selectedId === null) {
-        setSelectedId(0);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load clips");
-    }
-  }, [dir, selectedId]);
+  const router = useRouter();
+  const supabase = createClient();
 
   useEffect(() => {
-    fetchClips();
-  }, [fetchClips]);
+    async function loadRuns() {
+      const { data: runsData, error: runsError } = await supabase
+        .from("runs")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-  const selectedClip = clips.find((c) => c.id === selectedId);
+      if (runsError) {
+        setError(runsError.message);
+        setLoading(false);
+        return;
+      }
 
-  const handleSave = useCallback(
-    async (transcription: string, status: "corrected" | "discarded") => {
-      if (selectedId === null) return;
-      await fetch(`/api/clips/${selectedId}?dir=${encodeURIComponent(dir)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcription, status }),
+      // Fetch all clips in one query instead of N+1
+      const runIds = (runsData ?? []).map((r) => r.id);
+      const { data: clipsData } = await supabase
+        .from("clips")
+        .select("run_id, status, duration_sec")
+        .in("run_id", runIds);
+
+      // Aggregate per run
+      const statsMap = new Map<string, { total: number; done: number; duration: number }>();
+      for (const clip of clipsData ?? []) {
+        const stats = statsMap.get(clip.run_id) ?? { total: 0, done: 0, duration: 0 };
+        stats.total += 1;
+        if (clip.status === "corrected" || clip.status === "discarded") {
+          stats.done += 1;
+        }
+        stats.duration += clip.duration_sec ?? 0;
+        statsMap.set(clip.run_id, stats);
+      }
+
+      const runsWithProgress: RunWithProgress[] = (runsData ?? []).map((run) => {
+        const stats = statsMap.get(run.id) ?? { total: 0, done: 0, duration: 0 };
+        return {
+          ...run,
+          total_clips: stats.total,
+          done_clips: stats.done,
+          total_duration_sec: stats.duration,
+        };
       });
-      // Update local state
-      setClips((prev) =>
-        prev.map((c) =>
-          c.id === selectedId ? { ...c, transcription, status, corrected: true } : c
-        )
-      );
-    },
-    [selectedId, dir]
-  );
 
-  const goNext = useCallback(() => {
-    if (selectedId === null || selectedId >= clips.length - 1) return;
-    setSelectedId(selectedId + 1);
-  }, [selectedId, clips.length]);
+      setRuns(runsWithProgress);
+      setLoading(false);
+    }
 
-  const goPrev = useCallback(() => {
-    if (selectedId === null || selectedId <= 0) return;
-    setSelectedId(selectedId - 1);
-  }, [selectedId]);
+    loadRuns();
+  }, [supabase]);
 
-  if (!dir) {
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
+  if (loading) {
     return (
-      <div style={{ padding: 40, textAlign: "center" }}>
-        <h1>Ambara Transcript Editor</h1>
-        <p style={{ color: "#888", marginTop: 16 }}>
-          Start with: <code style={{ background: "#222", padding: "4px 8px", borderRadius: 4 }}>
-            ./ambara editor --dir data/output/your-run-directory
-          </code>
-        </p>
+      <div style={centerStyle}>
+        <p style={{ color: "#888" }}>Loading runs...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{ padding: 40, color: "#ef4444" }}>
-        <h2>Error</h2>
-        <pre>{error}</pre>
+      <div style={centerStyle}>
+        <p style={{ color: "#ef4444" }}>{error}</p>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-      <ClipList clips={clips} selectedId={selectedId} onSelect={setSelectedId} />
-      {selectedClip ? (
-        <ClipEditor
-          clip={selectedClip}
-          audioUrl={`/api/audio/${selectedClip.file_name.replace("clips/", "")}?dir=${encodeURIComponent(dir)}`}
-          onSave={handleSave}
-          onNext={goNext}
-          onPrev={goPrev}
-        />
-      ) : (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>
-          Select a clip to start editing
+    <div style={{ maxWidth: 800, margin: "0 auto", padding: "40px 24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 28 }}>Ambara Transcript Editor</h1>
+          <p style={{ color: "#888", margin: "4px 0 0" }}>Select a run to start labelling</p>
+        </div>
+        <button onClick={handleLogout} style={logoutButtonStyle}>
+          Sign out
+        </button>
+      </div>
+
+      {runs.length === 0 && (
+        <div style={{ textAlign: "center", padding: 40, color: "#888" }}>
+          <p>No runs found.</p>
+          <p style={{ fontSize: 14 }}>
+            Sync your first extraction with:&nbsp;
+            <code style={{ background: "#222", padding: "2px 6px", borderRadius: 4 }}>
+              ./ambara sync --dir data/output/your-run
+            </code>
+          </p>
         </div>
       )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {runs.map((run) => {
+          const progress = run.total_clips > 0
+            ? (run.done_clips / run.total_clips) * 100
+            : 0;
+
+          return (
+            <div
+              key={run.id}
+              onClick={() => router.push(`/runs/${run.id}`)}
+              style={runCardStyle}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 16 }}>{run.label}</div>
+                  {run.source && (
+                    <div style={{ color: "#666", fontSize: 13, marginTop: 2 }}>{run.source}</div>
+                  )}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 14, color: "#888" }}>
+                    {run.done_clips}/{run.total_clips} clips · {formatDuration(run.total_duration_sec)}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    {new Date(run.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginTop: 8, height: 4, background: "#333", borderRadius: 2 }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${progress}%`,
+                    background: progress === 100 ? "#22c55e" : "#3b82f6",
+                    borderRadius: 2,
+                    transition: "width 0.3s",
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+const centerStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: "100vh",
+};
+
+const runCardStyle: React.CSSProperties = {
+  padding: 16,
+  background: "#111",
+  border: "1px solid #333",
+  borderRadius: 8,
+  cursor: "pointer",
+};
+
+const logoutButtonStyle: React.CSSProperties = {
+  padding: "6px 14px",
+  background: "transparent",
+  color: "#888",
+  border: "1px solid #333",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontSize: 13,
+};
