@@ -27,7 +27,8 @@ This repo contains the data pipeline and training tools to get there.
 | `yt-download` | Downloads YouTube audio as 16kHz mono WAV |
 | `clip-extraction` | Splits long recordings into clean 5-30s speech clips, filtering out singing and music |
 | `transcript-editor` | Web UI for correcting draft transcripts |
-| `asr-training` | Whisper fine-tuning on Malagasy (in progress) |
+| `db-sync` | Syncs clips to Supabase, exports training data |
+| `asr-training` | Whisper fine-tuning on Malagasy + re-drafting |
 | `mt-training` | NLLB translation fine-tuning (in progress) |
 
 ## Quick start
@@ -74,7 +75,7 @@ The initial focus is on the Merina dialect (spoken in Antananarivo and the centr
 - [x] YouTube audio downloader
 - [x] Clip extraction pipeline (VAD + speech/music classifier + Whisper)
 - [x] Transcript correction web UI
-- [ ] Whisper fine-tuning pipeline
+- [x] Whisper fine-tuning pipeline
 - [ ] NLLB translation fine-tuning
 - [ ] End-to-end voice translation
 - [ ] Web app for live translation
@@ -89,7 +90,7 @@ ny-feoko/
 │   ├── yt-download/       # YouTube → WAV
 │   ├── clip-extraction/   # Long audio → clean speech clips
 │   ├── transcript-editor/ # Next.js app for correcting transcripts
-│   ├── asr-training/      # Whisper fine-tuning (placeholder)
+│   ├── asr-training/      # Whisper fine-tuning + re-drafting
 │   └── mt-training/       # NLLB fine-tuning (placeholder)
 ├── data/
 │   ├── input/             # Downloaded WAV files
