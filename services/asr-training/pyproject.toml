@@ -5,8 +5,20 @@ build-backend = "hatchling.build"
 [project]
 name = "asr-training"
 version = "0.1.0"
-requires-python = ">=3.14"
-dependencies = ["ny-feoko-shared"]
+requires-python = ">=3.10"
+dependencies = [
+    "ny-feoko-shared",
+    "db-sync",
+    "torch",
+    "torchaudio",
+    "transformers",
+    "datasets",
+    "evaluate",
+    "jiwer",
+    "soundfile",
+    "typer",
+    "rich",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asr_training"]
