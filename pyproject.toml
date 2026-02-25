@@ -21,4 +21,8 @@ python_version = "3.14"
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["services/clip-extraction/tests"]
+testpaths = [
+    "services/clip-extraction/tests",
+    "services/asr-training/tests",
+    "services/db-sync/tests",
+]

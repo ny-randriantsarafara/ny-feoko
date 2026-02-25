@@ -9,7 +9,9 @@ build/
 *.mp4
 data/input/
 data/output/
+data/training/
 data/*.json
+models/
 *.pt
 *.bin
 node_modules/

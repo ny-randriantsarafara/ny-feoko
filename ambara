@@ -12,7 +12,10 @@ case "${1:-help}" in
   export)     shift; exec "$PYTHON" -m db_sync.cli export "$@" ;;
   delete-run) shift; exec "$PYTHON" -m db_sync.cli delete-run "$@" ;;
   reset)      shift; exec "$PYTHON" -m db_sync.cli reset "$@" ;;
-  cleanup)    shift; exec "$PYTHON" -m db_sync.cli cleanup "$@" ;;
+  cleanup)          shift; exec "$PYTHON" -m db_sync.cli cleanup "$@" ;;
+  export-training)  shift; exec "$PYTHON" -m db_sync.cli export-training "$@" ;;
+  train)            shift; exec "$PYTHON" -m asr_training.cli train "$@" ;;
+  re-draft)         shift; exec "$PYTHON" -m asr_training.cli re-draft "$@" ;;
   editor)
     shift
     echo "Starting transcript editor at http://localhost:3000"
@@ -30,11 +33,14 @@ case "${1:-help}" in
              echo "  extract    Run full clip extraction pipeline"
              echo "  vad-only   Run VAD detection only"
              echo "  sync       Sync extraction run to Supabase (upload clips + metadata)"
-             echo "  export     Export corrected clips from Supabase to CSV"
-             echo "  delete-run Delete a run and all its data from Supabase"
-             echo "  reset      Wipe all runs, clips, edits, and storage"
-             echo "  cleanup    Remove orphaned data (empty runs, unlinked storage)"
-             echo "  editor     Open transcript correction UI"
+             echo "  export          Export corrected clips from Supabase to CSV"
+             echo "  export-training Export corrected clips as a training dataset (WAVs + metadata)"
+             echo "  train           Fine-tune Whisper on exported training data"
+             echo "  re-draft        Re-transcribe pending clips with a fine-tuned model"
+             echo "  delete-run      Delete a run and all its data from Supabase"
+             echo "  reset           Wipe all runs, clips, edits, and storage"
+             echo "  cleanup         Remove orphaned data (empty runs, unlinked storage)"
+             echo "  editor          Open transcript correction UI"
              echo ""
              echo "Examples:"
              echo "  ./ambara download 'https://youtube.com/watch?v=...' -l church-mass"
@@ -42,6 +48,9 @@ case "${1:-help}" in
              echo "  ./ambara vad-only --input test.wav --output data/vad_segments.json"
              echo "  ./ambara sync --dir data/output/20260222_201500_test"
              echo "  ./ambara export --label 20260222_201500_test -o metadata.corrected.csv"
+             echo "  ./ambara export-training --label 20260222_201500_test -d data/output/20260222_201500_test"
+             echo "  ./ambara train --data-dir data/training/20260226_test --device mps"
+             echo "  ./ambara re-draft --model models/whisper-mg-v1/model -d data/output/20260222_201500_test --label 20260222_201500_test"
              echo "  ./ambara delete-run --label 20260222_201500_test"
              echo "  ./ambara reset --yes"
              echo "  ./ambara cleanup"
