@@ -44,6 +44,44 @@ def export_cmd(
     export_corrected(client, run_id=run, label=label, output=output)
 
 
+@app.command("export-training")
+def export_training_cmd(
+    run: str | None = typer.Option(None, "--run", help="Run UUID"),
+    label: str | None = typer.Option(
+        None, "--label", "-l", help="Run label (uses most recent match)"
+    ),
+    source_dir: Path = typer.Option(
+        ..., "--source-dir", "-d", help="Local directory containing clips/ from the extraction run"
+    ),
+    output: Path = typer.Option(
+        "data/training", "--output", "-o", help="Parent directory for the training dataset"
+    ),
+    eval_split: float = typer.Option(
+        0.1, "--eval-split", help="Fraction of clips reserved for evaluation (0.0-0.5)"
+    ),
+) -> None:
+    """Export corrected clips as a HuggingFace-compatible training dataset."""
+    from db_sync.export import export_training
+    from db_sync.supabase_client import get_client
+
+    resolved_source = source_dir.resolve()
+    if not resolved_source.is_dir():
+        raise typer.BadParameter(f"Directory not found: {resolved_source}")
+
+    if not 0.0 <= eval_split <= 0.5:
+        raise typer.BadParameter("eval-split must be between 0.0 and 0.5")
+
+    client = get_client()
+    export_training(
+        client,
+        run_id=run,
+        label=label,
+        source_dir=resolved_source,
+        output=output.resolve(),
+        eval_split=eval_split,
+    )
+
+
 @app.command("delete-run")
 def delete_run_cmd(
     run: Optional[str] = typer.Option(None, "--run", help="Run UUID"),
