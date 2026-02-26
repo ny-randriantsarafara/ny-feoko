@@ -9,6 +9,7 @@ from rich.console import Console
 from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
+    TrainerCallback,
     WhisperForConditionalGeneration,
     WhisperProcessor,
 )
@@ -18,6 +19,23 @@ from asr_training.config import TrainingConfig
 from asr_training.dataset import load_training_data
 
 console = Console()
+
+
+class ColabProgressCallback(TrainerCallback):
+    """Callback to print training progress for Colab visibility."""
+
+    def on_log(self, args, state, control, logs=None, **kwargs):  # noqa: ANN001, ARG002
+        if logs is None:
+            return
+        step = state.global_step
+        parts = [f"Step {step}"]
+        if "loss" in logs:
+            parts.append(f"loss={logs['loss']:.4f}")
+        if "eval_loss" in logs:
+            parts.append(f"eval_loss={logs['eval_loss']:.4f}")
+        if "eval_wer" in logs:
+            parts.append(f"wer={logs['eval_wer']:.4f}")
+        print(" | ".join(parts), flush=True)
 
 
 def fine_tune(
@@ -100,6 +118,7 @@ def fine_tune(
         data_collator=collator,
         compute_metrics=compute_metrics,
         processing_class=processor.feature_extractor,
+        callbacks=[ColabProgressCallback()],
     )
 
     console.print(
