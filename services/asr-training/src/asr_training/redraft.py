@@ -92,7 +92,7 @@ def _transcribe_clip(
         predicted_ids = model.generate(
             input_features,
             forced_decoder_ids=forced_decoder_ids,
-            max_new_tokens=448,
+            max_new_tokens=444,  # 448 - 4 to leave room for decoder start tokens
         )
 
     return processor.batch_decode(
