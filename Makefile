@@ -1,7 +1,7 @@
 PYTHON = .venv/bin/python
 PIP = .venv/bin/pip
 
-.PHONY: setup install lint test
+.PHONY: setup install colab-install lint test
 
 setup:
 	python3 -m venv .venv
@@ -15,6 +15,12 @@ install:
 	$(PIP) install -e services/db-sync/
 	$(PIP) install -e services/asr-training/
 	$(PIP) install -e services/mt-training/
+
+colab-install:
+	pip install -q -e shared/
+	pip install -q -e services/clip-extraction/
+	pip install -q -e services/db-sync/
+	pip install -q -e services/asr-training/
 
 lint:
 	$(PYTHON) -m ruff check .

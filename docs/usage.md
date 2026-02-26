@@ -317,39 +317,23 @@ For small datasets (~100 clips), the defaults work well. If you have more data o
 
 ### Training on Google Colab
 
-For faster training with a free GPU, use Colab instead of your local machine.
+For faster training (and extraction) with a free GPU, use the Colab notebook:
 
-**One-time HuggingFace setup:**
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ny-randriantsarafara/ny-feoko/blob/main/notebooks/ambara_colab.ipynb)
 
-1. Create an account at [huggingface.co](https://huggingface.co)
-2. Go to **Settings > Access Tokens** and create a token with **write** permission
-3. Create a new model repository (e.g. `your-username/whisper-small-malagasy`)
+The notebook is fully automated — edit the config cell at the top, then **Runtime > Run All**. It handles Drive mounting, repo cloning, dependency installation, and running extraction/training.
 
-**Colab notebook flow:**
+**How it works:**
 
-Select a **T4 GPU** runtime (free tier works for ~100 clips), then:
+- The repo is cloned to the Colab VM for fast I/O
+- `data/` and `models/` are symlinked to Google Drive (`My Drive/ambara/`) so they persist across sessions
+- Extraction and training run on the T4/A100 GPU via `--device cuda`
 
-```python
-# Install from your repo
-!git clone https://github.com/your-user/ny-feoko.git
-%cd ny-feoko
-!pip install -e shared/ -e services/db-sync/ -e services/asr-training/
+**Before your first run:**
 
-# Login to HuggingFace (for pushing the model)
-from huggingface_hub import login
-login()
-```
-
-Upload your exported `data/training/<dataset>/` directory (via Colab's file panel or Google Drive), then train:
-
-```python
-!python -m asr_training.cli train \
-    --data-dir data/training/your-dataset \
-    --device cuda \
-    --push-to-hub your-username/whisper-small-malagasy
-```
-
-Using `--device cuda` auto-enables fp16 on Colab's T4. The `--push-to-hub` flag saves the model to HuggingFace Hub when training finishes.
+1. Upload your input audio to `My Drive/ambara/data/input/` (for extraction), or your exported training dataset to `My Drive/ambara/data/training/` (for training)
+2. If you want to push models to HuggingFace Hub, create a [write token](https://huggingface.co/settings/tokens) and set `HF_TOKEN` in the config cell
+3. If you use Supabase features (re-draft), place your `.env` file at `My Drive/ambara/.env`
 
 **Using the cloud-trained model locally:**
 

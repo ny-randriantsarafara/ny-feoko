@@ -1,5 +1,7 @@
 # Ambara
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ny-randriantsarafara/ny-feoko/blob/main/notebooks/ambara_colab.ipynb)
+
 Malagasy to French voice translator. Takes Malagasy speech in, gives French speech out.
 
 The name comes from the Malagasy word *mambara* — "to express" or "to declare."
