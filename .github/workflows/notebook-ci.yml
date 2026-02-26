@@ -1,27 +1,8 @@
-# Notebook CI/CD Pipeline
+# Notebook CI
 #
-# Validates Jupyter notebooks and syncs to Google Drive on push to main.
-#
-# === Required Secrets ===
-#
-# RCLONE_GDRIVE_CONFIG: Base64-encoded rclone config with Google Drive service account.
-#
-# Setup steps:
-#   1. Create a Google Cloud project and enable the Drive API
-#   2. Create a service account and download the JSON key
-#   3. Share the "ambara" Drive folder with the service account email
-#   4. Get the folder ID from the Drive URL (after /folders/)
-#   5. Create rclone.conf:
-#
-#      [gdrive]
-#      type = drive
-#      scope = drive
-#      service_account_file_contents = <paste-json-key-contents>
-#      root_folder_id = <ambara-folder-id>
-#
-#   6. Base64 encode and add to GitHub Secrets:
-#      base64 -i rclone.conf | pbcopy
-#      # Paste as RCLONE_GDRIVE_CONFIG in repo Settings > Secrets
+# Validates Jupyter notebooks on push/PR.
+# No Drive sync needed — Colab opens notebooks directly from GitHub:
+# https://colab.research.google.com/github/ny-randriantsarafara/ny-feoko/blob/main/notebooks/ambara_colab.ipynb
 
 name: Notebook CI
 
@@ -76,29 +57,3 @@ jobs:
           # F401: imported but unused (setup cells often import for later use)
           # E501: line too long (notebooks have wider displays)
           # Using --exit-zero for now; remove to enforce strict linting
-
-  sync-to-drive:
-    name: Sync to Google Drive
-    runs-on: ubuntu-latest
-    needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install rclone
-        run: |
-          curl -fsSL https://rclone.org/install.sh | sudo bash
-
-      - name: Configure rclone
-        env:
-          RCLONE_GDRIVE_CONFIG: ${{ secrets.RCLONE_GDRIVE_CONFIG }}
-        run: |
-          mkdir -p ~/.config/rclone
-          echo "$RCLONE_GDRIVE_CONFIG" | base64 -d > ~/.config/rclone/rclone.conf
-          chmod 600 ~/.config/rclone/rclone.conf
-
-      - name: Sync notebook to Drive
-        run: |
-          rclone copy notebooks/ambara_colab.ipynb gdrive:notebooks/ --verbose
-          echo "✓ Synced to Google Drive: ambara/notebooks/ambara_colab.ipynb"
