@@ -47,6 +47,21 @@ def export_corrected(
     console.print(f"[bold green]Exported {len(df)} clips to {output}[/]")
 
 
+def fetch_clip_status_counts(client: Client, run_id: str) -> dict[str, int]:
+    """Fetch clip counts by status for a run. Returns {status: count}."""
+    counts: dict[str, int] = {"pending": 0, "corrected": 0, "discarded": 0}
+    for status in counts:
+        result = (
+            client.table("clips")
+            .select("id", count="exact")
+            .eq("run_id", run_id)
+            .eq("status", status)
+            .execute()
+        )
+        counts[status] = result.count if result.count is not None else 0
+    return counts
+
+
 def export_training(
     client: Client,
     run_id: str | None,
@@ -55,6 +70,7 @@ def export_training(
     output: Path,
     eval_split: float,
     seed: int = 42,
+    overwrite: bool = False,
 ) -> Path:
     """Export corrected clips as a HuggingFace audiofolder dataset.
 
@@ -67,11 +83,43 @@ def export_training(
     resolved_label = _resolve_label(client, resolved_run_id)
     console.print(f"Exporting training data for run [bold]{resolved_label}[/]...")
 
+    counts = fetch_clip_status_counts(client, resolved_run_id)
+    total = sum(counts.values())
+    console.print(
+        f"  Clips in run: [bold]{total}[/]  "
+        f"([green]{counts['corrected']} corrected[/], "
+        f"{counts['pending']} pending, "
+        f"[dim]{counts['discarded']} discarded[/])"
+    )
+
     rows = _fetch_corrected_clips(
         client, resolved_run_id, ["file_name", "corrected_transcription"]
     )
     if not rows:
         raise SystemExit("No corrected clips found for this run.")
+
+    word_counts = [
+        len(str(r["corrected_transcription"]).split())
+        for r in rows
+        if r["corrected_transcription"]
+    ]
+    empty_count = sum(1 for r in rows if not r["corrected_transcription"])
+
+    if word_counts:
+        avg_words = sum(word_counts) / len(word_counts)
+        console.print(f"  Avg transcription length: {avg_words:.1f} words")
+
+    if empty_count > 0:
+        console.print(
+            f"  [yellow]Warning: {empty_count} corrected clips have empty transcriptions[/]"
+        )
+
+    short_count = sum(1 for wc in word_counts if wc <= 2)
+    if short_count > 0:
+        console.print(
+            f"  [yellow]Warning: {short_count} clips have very short transcriptions "
+            f"(1-2 words) — verify they are correct[/]"
+        )
 
     missing = [
         r["file_name"]
@@ -87,7 +135,10 @@ def export_training(
     timestamp = datetime.now(tz=UTC).strftime("%Y%m%d")
     dataset_dir = output / f"{timestamp}_{resolved_label}"
     if dataset_dir.exists():
-        raise SystemExit(f"Output directory already exists: {dataset_dir}")
+        if overwrite:
+            shutil.rmtree(dataset_dir)
+        else:
+            raise SystemExit(f"Output directory already exists: {dataset_dir}")
 
     rng = random.Random(seed)
     shuffled = list(rows)

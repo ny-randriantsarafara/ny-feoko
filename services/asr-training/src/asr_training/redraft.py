@@ -42,11 +42,13 @@ def redraft_pending(
         console.print("[yellow]No pending clips found.[/]")
         return 0
 
-    console.print(f"Re-drafting [bold]{len(pending_clips)}[/] pending clips...")
+    total_pending = len(pending_clips)
+    console.print(f"Re-drafting [bold]{total_pending}[/] pending clips...")
     updated = 0
+    skipped = 0
 
     with Progress(console=console) as progress:
-        task = progress.add_task("Transcribing", total=len(pending_clips))
+        task = progress.add_task("Transcribing", total=total_pending)
 
         for clip in pending_clips:
             file_name = clip["file_name"]
@@ -54,6 +56,7 @@ def redraft_pending(
 
             if not wav_path.exists():
                 console.print(f"[yellow]Skipping {file_name} (file not found)[/]")
+                skipped += 1
                 progress.advance(task)
                 continue
 
@@ -69,6 +72,20 @@ def redraft_pending(
             progress.advance(task)
 
     console.print(f"[bold green]Updated {updated} clips[/]")
+
+    if skipped > 0:
+        console.print(f"[yellow]Skipped {skipped} clips (file not found)[/]")
+
+    remaining = total_pending - updated - skipped
+    if remaining > 0:
+        console.print(f"  Remaining pending: {remaining}")
+
+    est_minutes = updated * 0.5
+    console.print(
+        f"  Estimated correction time: ~{est_minutes:.0f} min "
+        f"(at ~30s per clip)"
+    )
+
     return updated
 
 
