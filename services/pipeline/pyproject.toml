@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pipeline"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "ny-feoko-shared",
+    "clip-extraction",
+    "db-sync",
+    "asr-training",
+    "yt-download",
+    "typer>=0.12",
+    "rich>=13",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipeline"]

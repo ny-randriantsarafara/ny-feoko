@@ -72,6 +72,46 @@ def _upload_clips(client: Client, run_id: str, clips_dir: Path) -> None:
             progress.advance(task)
 
 
+def download_run_clips(client: Client, run_id: str, dest_dir: Path) -> int:
+    """Download all clips for a run from Supabase Storage.
+
+    Creates dest_dir/clips/ and writes WAV files there.
+    Skips files that already exist locally.
+    Returns the number of files downloaded.
+    """
+    clips_dir = dest_dir / "clips"
+    clips_dir.mkdir(parents=True, exist_ok=True)
+
+    files = client.storage.from_("clips").list(f"{run_id}/clips")
+    wav_files = [f for f in files if f["name"].endswith(".wav")]
+
+    if not wav_files:
+        console.print("[yellow]No clips found in storage.[/]")
+        return 0
+
+    downloaded = 0
+    console.print(f"Downloading {len(wav_files)} clips from storage...")
+
+    with Progress() as progress:
+        task = progress.add_task("Downloading", total=len(wav_files))
+        for file_info in wav_files:
+            name = file_info["name"]
+            local_path = clips_dir / name
+
+            if local_path.exists():
+                progress.advance(task)
+                continue
+
+            storage_path = f"{run_id}/clips/{name}"
+            data = client.storage.from_("clips").download(storage_path)
+            local_path.write_bytes(data)
+            downloaded += 1
+            progress.advance(task)
+
+    console.print(f"[bold green]Downloaded {downloaded} clips to {clips_dir}[/]")
+    return downloaded
+
+
 def _upsert_metadata(client: Client, run_id: str, metadata_path: Path) -> None:
     df = pd.read_csv(metadata_path)
     console.print(f"Upserting {len(df)} clip rows...")

@@ -29,13 +29,8 @@ def _get_title(url: str) -> str:
     return result.stdout.strip()
 
 
-@app.command()
-def download(
-    url: str = typer.Argument(..., help="YouTube video URL"),
-    output_dir: Path = typer.Option("data/input", "--output", "-o", help="Output directory"),
-    label: str = typer.Option("", "--label", "-l", help="Filename label (defaults to video title)"),
-) -> None:
-    """Download YouTube audio and convert to 16kHz mono WAV."""
+def download_audio(url: str, output_dir: Path, label: str) -> Path:
+    """Download YouTube audio and convert to 16kHz mono WAV. Returns the output path."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not label:
@@ -46,9 +41,8 @@ def download(
 
     out_path = output_dir / f"{label}.wav"
 
-    console.print(f"[bold]Downloading & converting to WAV...[/]")
+    console.print("[bold]Downloading & converting to WAV...[/]")
 
-    # yt-dlp downloads best audio, pipes to ffmpeg for 16kHz mono WAV
     subprocess.run(
         [
             "yt-dlp",
@@ -60,6 +54,18 @@ def download(
         ],
         check=True,
     )
+
+    return out_path
+
+
+@app.command()
+def download(
+    url: str = typer.Argument(..., help="YouTube video URL"),
+    output_dir: Path = typer.Option("data/input", "--output", "-o", help="Output directory"),
+    label: str = typer.Option("", "--label", "-l", help="Filename label (defaults to video title)"),
+) -> None:
+    """Download YouTube audio and convert to 16kHz mono WAV."""
+    out_path = download_audio(url, output_dir, label)
 
     from ny_feoko_shared.audio_io import probe_duration
     duration = probe_duration(str(out_path))
