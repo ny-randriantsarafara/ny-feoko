@@ -26,6 +26,7 @@ This repo contains the data pipeline and training tools to get there.
 
 | Service | What it does |
 |---------|-------------|
+| `pipeline` | Composite commands: `ingest` (download + extract + sync) and `iterate` (export + train + re-draft) |
 | `yt-download` | Downloads YouTube audio as 16kHz mono WAV |
 | `clip-extraction` | Splits long recordings into clean 5-30s speech clips, filtering out singing and music |
 | `transcript-editor` | Web UI for correcting draft transcripts |
@@ -39,16 +40,18 @@ This repo contains the data pipeline and training tools to get there.
 # First time setup
 make setup
 
-# Download a YouTube video
-./ambara download "https://youtube.com/watch?v=..." -l my-recording
+# Ingest: download + extract + sync to Supabase — one command
+./ambara ingest "https://youtube.com/watch?v=..." -l my-recording --device mps -v
 
-# Extract speech clips from it
-./ambara extract -i data/input/my-recording.wav -o data/output/ --device mps -v
-
-# Correct the transcripts
+# Correct the transcripts in the web editor
 cd services/transcript-editor && npm install && cd ../..
-./ambara editor --dir data/output/20260222_201500_my-recording
+./ambara editor
+
+# Iterate: export + train + re-draft — one command
+./ambara iterate -l my-recording --device mps
 ```
+
+Repeat `editor` + `iterate` — each round produces better drafts.
 
 ## Requirements
 
@@ -89,10 +92,12 @@ ny-feoko/
 ├── ambara                 # CLI entry point for everything
 ├── shared/                # Shared Python utilities
 ├── services/
+│   ├── pipeline/          # Composite commands (ingest, iterate)
 │   ├── yt-download/       # YouTube → WAV
 │   ├── clip-extraction/   # Long audio → clean speech clips
 │   ├── transcript-editor/ # Next.js app for correcting transcripts
 │   ├── asr-training/      # Whisper fine-tuning + re-drafting
+│   ├── db-sync/           # Supabase sync + export
 │   └── mt-training/       # NLLB fine-tuning (placeholder)
 ├── data/
 │   ├── input/             # Downloaded WAV files

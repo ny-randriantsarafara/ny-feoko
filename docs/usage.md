@@ -53,7 +53,38 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-## Full workflow (Supabase)
+## Quick workflow (recommended)
+
+Three commands for the full cycle:
+
+```bash
+# 1. Ingest: download + extract + sync — all in one
+./ambara ingest "https://youtube.com/watch?v=..." -l church-mass --device mps -v
+
+# 2. Correct transcripts in the web editor
+./ambara editor
+
+# 3. Iterate: export + train + re-draft — all in one
+./ambara iterate -l church-mass --device mps
+```
+
+Then repeat steps 2-3. Each iteration produces better drafts, making corrections faster.
+
+`ingest` accepts a YouTube URL (downloads automatically) or a local file path:
+
+```bash
+./ambara ingest data/input/recording.wav -l session1 --device mps
+```
+
+For Colab training with GPU, use `--push-to-hub` to save the model:
+
+```bash
+./ambara iterate -l church-mass --device cuda --push-to-hub user/whisper-mg
+```
+
+## Full workflow (individual steps)
+
+If you need more control, you can run each step separately:
 
 ```bash
 # 1. Download audio from YouTube
@@ -317,34 +348,44 @@ For small datasets (~100 clips), the defaults work well. If you have more data o
 
 ### Training on Google Colab
 
-For faster training (and extraction) with a free GPU, use the Colab notebook:
+For faster training with a free GPU, use the Colab notebook:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ny-randriantsarafara/ny-feoko/blob/main/notebooks/ambara_colab.ipynb)
 
-The notebook is fully automated — edit the config cell at the top, then **Runtime > Run All**. It handles Drive mounting, repo cloning, dependency installation, and running extraction/training.
+The notebook is fully automated — edit the config cell at the top, then **Runtime > Run All**.
 
 **How it works:**
 
-- The repo is cloned to the Colab VM for fast I/O
-- `data/` and `models/` are symlinked to Google Drive (`My Drive/ambara/`) so they persist across sessions
-- Extraction and training run on the T4/A100 GPU via `--device cuda`
+- Clips are downloaded from Supabase Storage automatically — no manual uploads
+- Trained models are pushed to HuggingFace Hub — no Google Drive needed for data
+- Google Drive is only used for the `.env` file (Supabase credentials)
 
 **Before your first run:**
 
-1. Upload your input audio to `My Drive/ambara/data/input/` (for extraction), or your exported training dataset to `My Drive/ambara/data/training/` (for training)
-2. If you want to push models to HuggingFace Hub, create a [write token](https://huggingface.co/settings/tokens) and set `HF_TOKEN` in the config cell
-3. If you use Supabase features (re-draft), place your `.env` file at `My Drive/ambara/.env`
+1. Place your `.env` file at `My Drive/ambara/.env` (with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`)
+2. Create a [HuggingFace write token](https://huggingface.co/settings/tokens) and set `HF_TOKEN` in the config cell
+3. Ingest your audio locally first (`./ambara ingest ...`) so clips are in Supabase
+
+**Typical Colab workflow:**
+
+1. Set `ITERATE_LABEL` to your run label and `ITERATE_PUSH_TO_HUB` to your HF repo
+2. Runtime > Run All
+3. The notebook exports corrected clips, trains Whisper, and re-drafts pending clips
+4. Open the editor locally, correct the improved drafts, and repeat
 
 **Using the cloud-trained model locally:**
 
-After training on Colab, use the HuggingFace repo ID directly — no need to download the model:
+After training on Colab, use the HuggingFace repo ID directly:
 
 ```bash
-./ambara re-draft --model your-username/whisper-small-malagasy \
-    -d data/output/<run-dir> --label <run-label>
+./ambara iterate -l my-label --device mps
 ```
 
-The `--model` flag accepts both local paths and HuggingFace repo IDs.
+Or in extraction:
+
+```bash
+./ambara ingest data/input/new-audio.wav -l new-session --device mps --whisper-hf user/whisper-mg
+```
 
 ### Using your fine-tuned model in extraction
 
