@@ -10,6 +10,7 @@ import { getIsMacOS } from "@/lib/platform";
  */
 const SHORTCUTS = {
   save: { mac: "⌘Enter", other: "Ctrl+Enter" },
+  acceptDraft: { mac: "⌘⇧Enter", other: "Ctrl+Shift+Enter" },
   next: { mac: "⌘→", other: "Ctrl+→" },
   prev: { mac: "⌘←", other: "Ctrl+←" },
   replay: { mac: "⌘R", other: "Ctrl+R" },
@@ -21,6 +22,7 @@ type ShortcutAction = keyof typeof SHORTCUTS;
 
 export interface ShortcutLabels {
   save: string;
+  acceptDraft: string;
   next: string;
   prev: string;
   replay: string;
@@ -37,13 +39,15 @@ interface UseShortcutLabelsResult {
  * Builds shortcut labels for a given platform.
  */
 function buildLabels(isMacOS: boolean): ShortcutLabels {
+  const platform = isMacOS ? "mac" : "other";
   return {
-    save: isMacOS ? SHORTCUTS.save.mac : SHORTCUTS.save.other,
-    next: isMacOS ? SHORTCUTS.next.mac : SHORTCUTS.next.other,
-    prev: isMacOS ? SHORTCUTS.prev.mac : SHORTCUTS.prev.other,
-    replay: isMacOS ? SHORTCUTS.replay.mac : SHORTCUTS.replay.other,
-    discard: isMacOS ? SHORTCUTS.discard.mac : SHORTCUTS.discard.other,
-    playPause: isMacOS ? SHORTCUTS.playPause.mac : SHORTCUTS.playPause.other,
+    save: SHORTCUTS.save[platform],
+    acceptDraft: SHORTCUTS.acceptDraft[platform],
+    next: SHORTCUTS.next[platform],
+    prev: SHORTCUTS.prev[platform],
+    replay: SHORTCUTS.replay[platform],
+    discard: SHORTCUTS.discard[platform],
+    playPause: SHORTCUTS.playPause[platform],
   };
 }
 

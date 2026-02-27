@@ -3,6 +3,8 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import type { Tables } from "@/lib/supabase/types";
 import { useShortcutLabels } from "@/hooks/useShortcutLabels";
+import Waveform from "@/components/Waveform";
+import type { WaveformHandle } from "@/components/Waveform";
 
 type Clip = Tables<"clips">;
 
@@ -21,7 +23,7 @@ interface ClipEditorProps {
 }
 
 export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext, onPrev, isLastClip }: ClipEditorProps) {
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const waveformRef = useRef<WaveformHandle>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const originalText = clip.corrected_transcription ?? clip.draft_transcription ?? "";
   const [text, setText] = useState(originalText);
@@ -37,23 +39,17 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
 
   const isDirty = text !== originalText;
 
-  // Reset text when clip changes
   useEffect(() => {
     setText(clip.corrected_transcription ?? clip.draft_transcription ?? "");
     setSaveStatus("");
     setPlaying(false);
-    audioRef.current?.play().then(() => setPlaying(true)).catch(() => {});
     textRef.current?.focus();
   }, [clip.id, clip.corrected_transcription, clip.draft_transcription]);
 
-  // Apply playback speed when audio element or speed changes
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = speed;
-    }
-  }, [speed, audioUrl]);
+  const handleWaveformReady = useCallback(() => {
+    waveformRef.current?.play();
+  }, []);
 
-  // Autosave with debounce
   useEffect(() => {
     if (!isDirty) return;
 
@@ -65,7 +61,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
     return () => clearTimeout(timer);
   }, [text, isDirty, onAutoSave]);
 
-  // Browser beforeunload guard
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (isDirty) {
@@ -82,38 +77,21 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
   }, [isDirty]);
 
   const togglePlay = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) {
-      audio.play().then(() => setPlaying(true));
-    } else {
-      audio.pause();
-      setPlaying(false);
-    }
+    waveformRef.current?.togglePlay();
   }, []);
 
   const replay = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = 0;
-    audio.play().then(() => setPlaying(true));
+    waveformRef.current?.replay();
   }, []);
 
   const jumpBack = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = Math.max(0, audio.currentTime - JUMP_BACK_SECONDS);
-    if (audio.paused) {
-      audio.play().then(() => setPlaying(true));
-    }
+    waveformRef.current?.jumpBack(JUMP_BACK_SECONDS);
   }, []);
 
   const changeSpeed = useCallback((newSpeed: number) => {
     setSpeed(newSpeed);
     localStorage.setItem("playback-speed", String(newSpeed));
-    if (audioRef.current) {
-      audioRef.current.playbackRate = newSpeed;
-    }
+    waveformRef.current?.setSpeed(newSpeed);
   }, []);
 
   const handleSave = useCallback(async (status: "corrected" | "discarded" = "corrected") => {
@@ -125,6 +103,18 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
       onNext();
     }
   }, [text, onSave, onNext, isLastClip]);
+
+  const handleAcceptDraft = useCallback(async () => {
+    const draft = clip.draft_transcription ?? "";
+    if (!draft) return;
+    setSaving(true);
+    await onSave(draft, "corrected");
+    setSaving(false);
+    setSaveStatus("");
+    if (!isLastClip) {
+      onNext();
+    }
+  }, [clip.draft_transcription, onSave, onNext, isLastClip]);
 
   const guardedNext = useCallback(() => {
     if (confirmIfDirty()) onNext();
@@ -138,7 +128,10 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
     const handler = (e: KeyboardEvent) => {
       const isCtrl = e.ctrlKey || e.metaKey;
 
-      if (isCtrl && e.key === "Enter") {
+      if (isCtrl && e.shiftKey && e.key === "Enter") {
+        e.preventDefault();
+        handleAcceptDraft();
+      } else if (isCtrl && e.key === "Enter") {
         e.preventDefault();
         handleSave("corrected");
       } else if (isCtrl && e.key === "ArrowRight") {
@@ -172,11 +165,10 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleSave, guardedNext, guardedPrev, replay, togglePlay, jumpBack, changeSpeed, speed]);
+  }, [handleSave, handleAcceptDraft, guardedNext, guardedPrev, replay, togglePlay, jumpBack, changeSpeed, speed]);
 
   return (
     <div className="flex-1 p-4 md:p-6 flex flex-col gap-4">
-      {/* Header with file name and metadata */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
         <h2 className="m-0 font-mono text-base md:text-lg truncate">
           {clip.file_name.replace("clips/", "")}
@@ -201,7 +193,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         </div>
       </div>
 
-      {/* Draft transcription reference */}
       {clip.draft_transcription && (
         <div className="p-3 bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg text-sm text-[#a0a0c0] leading-relaxed">
           <span className="text-xs text-gray-500 block mb-1">Draft (Whisper)</span>
@@ -209,42 +200,42 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         </div>
       )}
 
-      {/* Audio controls */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <button onClick={togglePlay} className="btn">
-          {playing ? "Pause" : "Play"}
-        </button>
-        <button onClick={replay} className="btn">
-          Replay
-        </button>
-        <button onClick={jumpBack} className="btn" title={`Jump back ${JUMP_BACK_SECONDS}s`}>
-          -{JUMP_BACK_SECONDS}s
-        </button>
-        <div className="flex items-center gap-1 text-xs text-gray-400">
-          {SPEED_OPTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => changeSpeed(s)}
-              className={`px-1.5 py-0.5 rounded text-xs ${
-                speed === s ? "bg-blue-700 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-              }`}
-            >
-              {s}x
-            </button>
-          ))}
-        </div>
-        <audio
-          ref={audioRef}
-          src={audioUrl}
-          onEnded={() => setPlaying(false)}
-          onPause={() => setPlaying(false)}
+      <div className="flex flex-col gap-2">
+        <Waveform
+          ref={waveformRef}
+          audioUrl={audioUrl}
+          speed={speed}
           onPlay={() => setPlaying(true)}
-          className="flex-1 min-w-0 max-w-full"
-          controls
+          onPause={() => setPlaying(false)}
+          onFinish={() => setPlaying(false)}
+          onReady={handleWaveformReady}
         />
+        <div className="flex flex-wrap gap-2 items-center">
+          <button onClick={togglePlay} className="btn">
+            {playing ? "Pause" : "Play"}
+          </button>
+          <button onClick={replay} className="btn">
+            Replay
+          </button>
+          <button onClick={jumpBack} className="btn" title={`Jump back ${JUMP_BACK_SECONDS}s`}>
+            -{JUMP_BACK_SECONDS}s
+          </button>
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            {SPEED_OPTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => changeSpeed(s)}
+                className={`px-1.5 py-0.5 rounded text-xs ${
+                  speed === s ? "bg-blue-700 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                }`}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Transcription textarea */}
       <textarea
         ref={textRef}
         value={text}
@@ -253,7 +244,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         className="flex-1 min-h-[150px] md:min-h-[200px] p-4 text-base md:text-lg leading-relaxed font-sans bg-[#1e1e1e] text-gray-200 border border-gray-700 rounded-lg resize-y focus:outline-none focus:border-blue-500"
       />
 
-      {/* Action buttons */}
       <div className="flex flex-col sm:flex-row gap-2 sm:justify-between">
         <div className="flex gap-2">
           <button onClick={guardedPrev} className="btn flex-1 sm:flex-none">
@@ -271,6 +261,14 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
             Discard ({labels.discard})
           </button>
           <button
+            onClick={handleAcceptDraft}
+            disabled={saving || !clip.draft_transcription}
+            className="btn bg-blue-800 hover:bg-blue-700 flex-1 sm:flex-none disabled:opacity-50"
+            title="Accept the Whisper draft as-is"
+          >
+            Accept Draft ({labels.acceptDraft})
+          </button>
+          <button
             onClick={() => handleSave("corrected")}
             disabled={saving}
             className="btn bg-green-800 hover:bg-green-700 font-bold flex-1 sm:flex-none disabled:opacity-50"
@@ -280,17 +278,16 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         </div>
       </div>
 
-      {/* Completion feedback */}
       {isLastClip && clip.status !== "pending" && (
         <div className="text-center text-green-400 text-sm py-2">
           All clips in this run have been processed!
         </div>
       )}
 
-      {/* Keyboard shortcuts help */}
       <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
         <span>{labels.playPause}: play/pause</span>
         <span>{labels.save}: save & next</span>
+        <span>{labels.acceptDraft}: accept draft</span>
         <span>{labels.prev}/{labels.next.replace(/.*?([←→])/, "$1")}: prev/next</span>
         <span>{labels.replay}: replay</span>
         <span>{labels.discard}: discard</span>
