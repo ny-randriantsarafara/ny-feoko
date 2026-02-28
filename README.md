@@ -89,26 +89,32 @@ The initial focus is on the Merina dialect (spoken in Antananarivo and the centr
 
 ```
 ny-feoko/
-├── ambara                 # CLI entry point for everything
-├── shared/                # Shared Python utilities
+├── ambara                     # CLI entry point
+├── shared/                    # Shared Python utilities (audio I/O, models)
 ├── services/
-│   ├── pipeline/          # Composite commands (ingest, iterate)
-│   ├── yt-download/       # YouTube → WAV
-│   ├── clip-extraction/   # Long audio → clean speech clips
-│   ├── transcript-editor/ # Next.js app for correcting transcripts
-│   ├── asr-training/      # Whisper fine-tuning + re-drafting
-│   ├── db-sync/           # Supabase sync + export
-│   └── mt-training/       # NLLB fine-tuning (placeholder)
-├── data/
-│   ├── input/             # Downloaded WAV files
-│   └── output/            # Extracted clips + metadata
-└── docs/
-    └── usage.md           # Detailed usage guide
+│   ├── yt-download/           # YouTube audio download
+│   ├── clip-extraction/       # VAD + classify + transcribe -> clips
+│   ├── db-sync/               # Supabase sync and export
+│   ├── asr-training/          # Whisper fine-tuning
+│   ├── pipeline/              # Ingest and iterate orchestration
+│   └── transcript-editor/     # Next.js web UI for transcript correction
+├── data/                      # Input, output, training data (gitignored)
+├── docs/                      # Architecture and usage documentation
+├── notebooks/                 # Colab training notebook
+└── scripts/                   # Bible scraping and ingestion
 ```
 
-## Docs
+## For developers
 
-See [docs/usage.md](docs/usage.md) for the full guide — all CLI options, keyboard shortcuts for the editor, threshold tuning, and how to use HuggingFace models.
+- [docs/architecture.md](docs/architecture.md) — Full architecture overview, data flow, and configuration
+- [docs/usage.md](docs/usage.md) — Detailed usage guide: CLI options, editor shortcuts, threshold tuning
+- Each service has its own README with setup, usage, and modification guides:
+  - [services/yt-download](services/yt-download/README.md)
+  - [services/clip-extraction](services/clip-extraction/README.md)
+  - [services/db-sync](services/db-sync/README.md)
+  - [services/asr-training](services/asr-training/README.md)
+  - [services/pipeline](services/pipeline/README.md)
+  - [services/transcript-editor](services/transcript-editor/README.md)
 
 ## License
 
