@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import typer
+from ny_feoko_shared.audio_io import probe_duration
 from rich.console import Console
 
 app = typer.Typer(help="Ambara YouTube downloader — download audio as training-ready WAV.")
@@ -22,10 +23,15 @@ def _sanitize(name: str) -> str:
 
 def _get_title(url: str) -> str:
     """Fetch video title via yt-dlp."""
-    result = subprocess.run(
-        ["yt-dlp", "--get-title", url],
-        capture_output=True, text=True, check=True,
-    )
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--get-title", url],
+            capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"Failed to fetch title for {url}: {exc.stderr or exc.stdout or exc}"
+        ) from exc
     return result.stdout.strip()
 
 
@@ -43,17 +49,22 @@ def download_audio(url: str, output_dir: Path, label: str) -> Path:
 
     console.print("[bold]Downloading & converting to WAV...[/]")
 
-    subprocess.run(
-        [
-            "yt-dlp",
-            "--extract-audio",
-            "--audio-format", "wav",
-            "--postprocessor-args", "ffmpeg:-ac 1 -ar 16000",
-            "-o", str(out_path),
-            url,
-        ],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [
+                "yt-dlp",
+                "--extract-audio",
+                "--audio-format", "wav",
+                "--postprocessor-args", "ffmpeg:-ac 1 -ar 16000",
+                "-o", str(out_path),
+                url,
+            ],
+            capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"Failed to download audio for {url}: {exc.stderr or exc.stdout or exc}"
+        ) from exc
 
     return out_path
 
@@ -67,7 +78,6 @@ def download(
     """Download YouTube audio and convert to 16kHz mono WAV."""
     out_path = download_audio(url, output_dir, label)
 
-    from ny_feoko_shared.audio_io import probe_duration
     duration = probe_duration(str(out_path))
 
     console.print(f"[bold green]Done![/] {out_path} ({duration:.0f}s)")
