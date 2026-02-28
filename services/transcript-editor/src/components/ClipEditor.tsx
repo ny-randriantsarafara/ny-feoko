@@ -3,15 +3,16 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import type { Tables } from "@/lib/supabase/types";
 import { useShortcutLabels } from "@/hooks/useShortcutLabels";
+import { useClipEditorKeyboard } from "@/hooks/useClipEditorKeyboard";
+import { useClipEditorAutosave } from "@/hooks/useClipEditorAutosave";
 import { wordDiff } from "@/lib/word-diff";
 import Waveform from "@/components/Waveform";
 import type { WaveformHandle } from "@/components/Waveform";
+import { PlaybackSpeedControls } from "@/components/PlaybackSpeedControls";
 
 type Clip = Tables<"clips">;
 
-const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 const JUMP_BACK_SECONDS = 3;
-const AUTOSAVE_DELAY_MS = 2000;
 
 interface ClipEditorProps {
   readonly clip: Clip;
@@ -80,8 +81,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
   const originalText = clip.corrected_transcription ?? clip.draft_transcription ?? "";
   const [text, setText] = useState(originalText);
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | "error">("");
-  const [showSaveFlash, setShowSaveFlash] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(() => {
@@ -92,6 +91,12 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
   const { labels } = useShortcutLabels();
 
   const isDirty = text !== originalText;
+  const { saveStatus, showSaveFlash, clearSaveStatus } = useClipEditorAutosave({
+    text,
+    isDirty,
+    onAutoSave,
+    debounceMs: 2000,
+  });
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -99,7 +104,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
 
   useEffect(() => {
     setText(clip.corrected_transcription ?? clip.draft_transcription ?? "");
-    setSaveStatus("");
     setPlaying(false);
     textRef.current?.focus();
   }, [clip.id, clip.corrected_transcription, clip.draft_transcription]);
@@ -107,25 +111,6 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
   const handleWaveformReady = useCallback(() => {
     waveformRef.current?.play();
   }, []);
-
-  useEffect(() => {
-    if (!isDirty) return;
-
-    const timer = setTimeout(() => {
-      setSaveStatus("saving");
-      onAutoSave(text)
-        .then(() => {
-          setSaveStatus("saved");
-          setShowSaveFlash(true);
-          setTimeout(() => setShowSaveFlash(false), 1500);
-        })
-        .catch(() => {
-          setSaveStatus("error");
-        });
-    }, AUTOSAVE_DELAY_MS);
-
-    return () => clearTimeout(timer);
-  }, [text, isDirty, onAutoSave]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -162,25 +147,25 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
 
   const handleSave = useCallback(async (status: "corrected" | "discarded" = "corrected") => {
     setSaving(true);
+    clearSaveStatus();
     await onSave(text, status);
     setSaving(false);
-    setSaveStatus("");
     if (!isLastClip) {
       onNext();
     }
-  }, [text, onSave, onNext, isLastClip]);
+  }, [text, onSave, onNext, isLastClip, clearSaveStatus]);
 
   const handleAcceptDraft = useCallback(async () => {
     const draft = clip.draft_transcription ?? "";
     if (!draft) return;
     setSaving(true);
+    clearSaveStatus();
     await onSave(draft, "corrected");
     setSaving(false);
-    setSaveStatus("");
     if (!isLastClip) {
       onNext();
     }
-  }, [clip.draft_transcription, onSave, onNext, isLastClip]);
+  }, [clip.draft_transcription, onSave, onNext, isLastClip, clearSaveStatus]);
 
   const guardedNext = useCallback(() => {
     if (confirmIfDirty()) onNext();
@@ -190,52 +175,19 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
     if (confirmIfDirty()) onPrev();
   }, [confirmIfDirty, onPrev]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const isCtrl = e.ctrlKey || e.metaKey;
-
-      if (isCtrl && e.shiftKey && e.key === "Enter") {
-        e.preventDefault();
-        handleAcceptDraft();
-      } else if (isCtrl && e.key === "Enter") {
-        e.preventDefault();
-        handleSave("corrected");
-      } else if (isCtrl && e.key === "ArrowRight") {
-        e.preventDefault();
-        guardedNext();
-      } else if (isCtrl && e.key === "ArrowLeft") {
-        e.preventDefault();
-        guardedPrev();
-      } else if (isCtrl && e.key === "r") {
-        e.preventDefault();
-        replay();
-      } else if (isCtrl && e.key === "d") {
-        e.preventDefault();
-        if (onDiscard) {
-          onDiscard(text);
-        } else {
-          handleSave("discarded");
-        }
-      } else if (isCtrl && e.key === " ") {
-        e.preventDefault();
-        togglePlay();
-      } else if (isCtrl && e.key === "b") {
-        e.preventDefault();
-        jumpBack();
-      } else if (isCtrl && e.key === "ArrowUp") {
-        e.preventDefault();
-        const idx = SPEED_OPTIONS.indexOf(speed as typeof SPEED_OPTIONS[number]);
-        if (idx < SPEED_OPTIONS.length - 1) changeSpeed(SPEED_OPTIONS[idx + 1]);
-      } else if (isCtrl && e.key === "ArrowDown") {
-        e.preventDefault();
-        const idx = SPEED_OPTIONS.indexOf(speed as typeof SPEED_OPTIONS[number]);
-        if (idx > 0) changeSpeed(SPEED_OPTIONS[idx - 1]);
-      }
-    };
-
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [handleSave, handleAcceptDraft, guardedNext, guardedPrev, replay, togglePlay, jumpBack, changeSpeed, speed, onDiscard, text]);
+  useClipEditorKeyboard({
+    handleSave,
+    handleAcceptDraft,
+    onPrev: guardedPrev,
+    onNext: guardedNext,
+    onDiscard,
+    text,
+    speed,
+    changeSpeed,
+    togglePlay,
+    replay,
+    jumpBack,
+  });
 
   return (
     <div className="flex-1 p-4 md:p-6 flex flex-col gap-4 overflow-y-auto">
@@ -298,19 +250,7 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
           <button onClick={jumpBack} className="btn" title={`Jump back ${JUMP_BACK_SECONDS}s`}>
             -{JUMP_BACK_SECONDS}s
           </button>
-          <div className="flex items-center gap-1 text-xs text-gray-400">
-            {SPEED_OPTIONS.map((s) => (
-              <button
-                key={s}
-                onClick={() => changeSpeed(s)}
-                className={`px-1.5 py-0.5 rounded text-xs ${
-                  speed === s ? "bg-blue-700 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
-              >
-                {s}x
-              </button>
-            ))}
-          </div>
+          <PlaybackSpeedControls speed={speed} onSpeedChange={changeSpeed} />
         </div>
       </div>
 

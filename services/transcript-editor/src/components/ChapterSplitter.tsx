@@ -5,9 +5,14 @@ import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.esm.js";
 import Minimap from "wavesurfer.js/dist/plugins/minimap.esm.js";
 import type { ParagraphMeta } from "@/lib/supabase/types";
+import { formatTime, parseTime } from "@/lib/format";
 import { splitWavAtBoundaries, detectSilences } from "@/lib/audio-split";
 import type { SilenceRegion } from "@/lib/audio-split";
 import { createClient } from "@/lib/supabase/client";
+import {
+  PlaybackSpeedControls,
+  SPEED_OPTIONS,
+} from "@/components/PlaybackSpeedControls";
 
 interface ChapterSplitterProps {
   readonly clipId: string;
@@ -35,36 +40,8 @@ interface ChunkUploadState {
 const MARKER_COLOR = "rgba(255, 165, 0, 0.7)";
 const SILENCE_MARKER_COLOR = "rgba(100, 149, 237, 0.3)";
 const MARKER_WIDTH_SEC = 0.05;
-const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 const JUMP_BACK_SECONDS = 3;
 const PARAGRAPH_SEPARATOR = "\n";
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
-}
-
-function parseTime(input: string): number | null {
-  const trimmed = input.trim();
-
-  const colonMatch = trimmed.match(/^(\d+):(\d+(?:\.\d+)?)$/);
-  if (colonMatch) {
-    const minutes = parseInt(colonMatch[1], 10);
-    const secs = parseFloat(colonMatch[2]);
-    if (!isNaN(minutes) && !isNaN(secs) && secs < 60) {
-      return minutes * 60 + secs;
-    }
-    return null;
-  }
-
-  const plain = parseFloat(trimmed);
-  if (!isNaN(plain) && plain >= 0) {
-    return plain;
-  }
-
-  return null;
-}
 
 function snapToWordBoundary(text: string, charIndex: number): number {
   if (charIndex <= 0) return 0;
@@ -615,19 +592,7 @@ export default function ChapterSplitter({
         <button onClick={jumpBack} className="btn" title={`Jump back ${JUMP_BACK_SECONDS}s`}>
           -{JUMP_BACK_SECONDS}s
         </button>
-        <div className="flex items-center gap-1 text-xs text-gray-400">
-          {SPEED_OPTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => changeSpeed(s)}
-              className={`px-1.5 py-0.5 rounded text-xs ${
-                speed === s ? "bg-blue-700 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-              }`}
-            >
-              {s}x
-            </button>
-          ))}
-        </div>
+        <PlaybackSpeedControls speed={speed} onSpeedChange={changeSpeed} />
         <div className="w-px h-5 bg-gray-700 mx-1" />
         <button
           onClick={addSplitPoint}
