@@ -399,6 +399,9 @@ export default function ChapterSplitter({
       ];
 
       const response = await fetch(audioUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${response.status}`);
+      }
       const wavBlob = await response.blob();
       const blobs = await splitWavAtBoundaries(wavBlob, audioBoundaries);
 

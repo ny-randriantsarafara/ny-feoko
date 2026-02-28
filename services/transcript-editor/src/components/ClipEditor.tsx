@@ -80,7 +80,7 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
   const originalText = clip.corrected_transcription ?? clip.draft_transcription ?? "";
   const [text, setText] = useState(originalText);
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved">("");
+  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [showSaveFlash, setShowSaveFlash] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -119,7 +119,9 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
           setShowSaveFlash(true);
           setTimeout(() => setShowSaveFlash(false), 1500);
         })
-        .catch(() => setSaveStatus(""));
+        .catch(() => {
+          setSaveStatus("error");
+        });
     }, AUTOSAVE_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -257,6 +259,7 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
             {clip.status}
           </span>
           {saveStatus === "saving" && <span className="text-yellow-500">Saving...</span>}
+          {saveStatus === "error" && <span className="text-red-500">Autosave failed</span>}
           {saveStatus === "saved" && (
             <span className="text-green-400 flex items-center gap-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

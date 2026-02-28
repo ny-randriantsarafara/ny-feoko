@@ -73,10 +73,15 @@ export default function RunEditorPage() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data.user?.id ?? null);
-    });
-  }, [supabase]);
+    supabase.auth
+      .getUser()
+      .then(({ data }) => {
+        setUserId(data.user?.id ?? null);
+      })
+      .catch(() => {
+        router.replace("/login");
+      });
+  }, [supabase, router]);
 
   const fetchClips = useCallback(async () => {
     if (!runId) return;
@@ -177,7 +182,7 @@ export default function RunEditorPage() {
     if (cached && Date.now() - cached.fetchedAt < URL_MAX_AGE_MS) {
       setCurrentAudioUrl(cached.url);
     } else {
-      getAudioUrl(selected).then(setCurrentAudioUrl);
+      getAudioUrl(selected).then(setCurrentAudioUrl).catch(() => setCurrentAudioUrl(""));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, clips]);
@@ -189,13 +194,15 @@ export default function RunEditorPage() {
     const upcoming = filteredClips.slice(selectedIdx + 1, selectedIdx + 3);
 
     for (const clip of upcoming) {
-      getAudioUrl(clip).then((url) => {
-        if (url) {
-          const audio = new Audio(url);
-          audio.preload = "auto";
-          audio.load();
-        }
-      });
+      getAudioUrl(clip)
+        .then((url) => {
+          if (url) {
+            const audio = new Audio(url);
+            audio.preload = "auto";
+            audio.load();
+          }
+        })
+        .catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -207,7 +214,7 @@ export default function RunEditorPage() {
 
       const cached = audioUrls[selected.id];
       if (cached && Date.now() - cached.fetchedAt > 45 * 60 * 1000) {
-        getAudioUrl(selected, true).then(setCurrentAudioUrl);
+        getAudioUrl(selected, true).then(setCurrentAudioUrl).catch(() => setCurrentAudioUrl(""));
       }
     }, 10 * 60 * 1000);
 

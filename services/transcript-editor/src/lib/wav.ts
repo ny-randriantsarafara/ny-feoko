@@ -63,8 +63,14 @@ export async function blobToWav(blob: Blob): Promise<Blob> {
   const arrayBuffer = await blob.arrayBuffer();
   const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
 
+  let audioBuffer: AudioBuffer;
   try {
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  } catch {
+    throw new Error("Failed to decode audio data. The file may be corrupted or in an unsupported format.");
+  }
+
+  try {
     const wavBuffer = encodeWav(audioBuffer);
     return new Blob([wavBuffer], { type: "audio/wav" });
   } finally {

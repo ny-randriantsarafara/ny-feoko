@@ -93,8 +93,14 @@ export async function splitWavAtBoundaries(
   const arrayBuffer = await wavBlob.arrayBuffer();
   const audioContext = new AudioContext();
 
+  let decoded: AudioBuffer;
   try {
-    const decoded = await audioContext.decodeAudioData(arrayBuffer);
+    decoded = await audioContext.decodeAudioData(arrayBuffer);
+  } catch {
+    throw new Error("Failed to decode audio data. The file may be corrupted or in an unsupported format.");
+  }
+
+  try {
     const sampleRate = decoded.sampleRate;
     const channelData = decoded.getChannelData(0);
 
