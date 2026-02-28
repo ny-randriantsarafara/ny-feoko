@@ -6,20 +6,9 @@ from pathlib import Path
 
 import typer
 
+from ny_feoko_shared.device import detect_device
+
 app = typer.Typer(help="Ambara ASR training — fine-tune Whisper and re-draft pending clips.")
-
-
-def _detect_device(requested: str) -> str:
-    if requested != "auto":
-        return requested
-
-    import torch
-
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 @app.command()
@@ -52,7 +41,7 @@ def train(
     if not resolved_data.is_dir():
         raise typer.BadParameter(f"Dataset directory not found: {resolved_data}")
 
-    resolved_device = _detect_device(device)
+    resolved_device = detect_device(device)
     config = TrainingConfig(
         base_model=base_model,
         epochs=epochs,
@@ -98,7 +87,7 @@ def re_draft(
 
     client = get_client()
     run_id = _resolve_run_id(client, run_id=run, label=label)
-    resolved_device = _detect_device(device)
+    resolved_device = detect_device(device)
 
     redraft_pending(
         client=client,

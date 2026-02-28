@@ -6,20 +6,9 @@ from pathlib import Path
 
 import typer
 
+from ny_feoko_shared.device import detect_device
+
 app = typer.Typer(help="Ambara pipeline — composite commands for the full workflow.")
-
-
-def _detect_device(requested: str) -> str:
-    if requested != "auto":
-        return requested
-
-    import torch
-
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 @app.command()
@@ -44,7 +33,7 @@ def ingest(
     """Download (if URL) + extract clips + sync to Supabase — all in one shot."""
     from pipeline.ingest import ingest as run_ingest
 
-    resolved_device = _detect_device(device)
+    resolved_device = detect_device(device)
     run_ingest(
         input_path=input_path,
         label=label,
@@ -80,7 +69,7 @@ def iterate(
     """Export corrected data + train Whisper + re-draft pending clips — all in one shot."""
     from pipeline.iterate import iterate as run_iterate
 
-    resolved_device = _detect_device(device)
+    resolved_device = detect_device(device)
     run_iterate(
         label=label,
         device=resolved_device,
