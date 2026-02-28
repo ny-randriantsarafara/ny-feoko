@@ -14,7 +14,6 @@ install:
 	$(PIP) install -e services/clip-extraction/
 	$(PIP) install -e services/db-sync/
 	$(PIP) install -e services/asr-training/
-	$(PIP) install -e services/mt-training/
 	$(PIP) install -e services/pipeline/
 
 colab-install:

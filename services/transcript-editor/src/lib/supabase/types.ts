@@ -1,3 +1,8 @@
+export interface ParagraphMeta {
+  heading: string | null;
+  text: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -6,18 +11,21 @@ export interface Database {
           id: string;
           label: string;
           source: string | null;
+          type: "extraction" | "reading";
           created_at: string;
         };
         Insert: {
           id?: string;
           label: string;
           source?: string | null;
+          type?: "extraction" | "reading";
           created_at?: string;
         };
         Update: {
           id?: string;
           label?: string;
           source?: string | null;
+          type?: "extraction" | "reading";
           created_at?: string;
         };
         Relationships: [];
@@ -39,6 +47,7 @@ export interface Database {
           priority: number;
           corrected_at: string | null;
           corrected_by: string | null;
+          paragraphs: ParagraphMeta[] | null;
           created_at: string;
           updated_at: string;
         };
@@ -58,6 +67,7 @@ export interface Database {
           priority?: number;
           corrected_at?: string | null;
           corrected_by?: string | null;
+          paragraphs?: ParagraphMeta[] | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -77,6 +87,7 @@ export interface Database {
           priority?: number;
           corrected_at?: string | null;
           corrected_by?: string | null;
+          paragraphs?: ParagraphMeta[] | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -12,6 +12,7 @@ case "${1:-help}" in
   vad-only)  shift; exec "$PYTHON" -m clip_extraction.cli vad-only "$@" ;;
   sync)       shift; exec "$PYTHON" -m db_sync.cli sync "$@" ;;
   export)     shift; exec "$PYTHON" -m db_sync.cli export "$@" ;;
+  dump)       shift; exec "$PYTHON" -m db_sync.cli dump "$@" ;;
   delete-run) shift; exec "$PYTHON" -m db_sync.cli delete-run "$@" ;;
   reset)      shift; exec "$PYTHON" -m db_sync.cli reset "$@" ;;
   cleanup)          shift; exec "$PYTHON" -m db_sync.cli cleanup "$@" ;;
@@ -44,6 +45,7 @@ case "${1:-help}" in
              echo "  re-draft        Re-transcribe pending clips with a fine-tuned model"
              echo ""
              echo "Database:"
+             echo "  dump            Dump all table data as SQL (backup before migrations)"
              echo "  delete-run      Delete a run and all its data from Supabase"
              echo "  reset           Wipe all runs, clips, edits, and storage"
              echo "  cleanup         Remove orphaned data"

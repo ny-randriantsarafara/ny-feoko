@@ -10,12 +10,16 @@ build/
 data/input/
 data/output/
 data/training/
+data/bible/
 data/*.json
 models/
 *.pt
 *.bin
+data/backups/
 node_modules/
 .next/
 .env
 .env.local
 .DS_Store
+.vscode/
+tsconfig.tsbuildinfo

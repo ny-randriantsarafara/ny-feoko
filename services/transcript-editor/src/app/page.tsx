@@ -34,14 +34,12 @@ export default function RunListPage() {
         return;
       }
 
-      // Fetch all clips in one query instead of N+1
       const runIds = (runsData ?? []).map((r) => r.id);
       const { data: clipsData } = await supabase
         .from("clips")
         .select("run_id, status, duration_sec")
         .in("run_id", runIds);
 
-      // Aggregate per run
       const statsMap = new Map<string, { total: number; done: number; duration: number }>();
       for (const clip of clipsData ?? []) {
         const stats = statsMap.get(clip.run_id) ?? { total: 0, done: 0, duration: 0 };
@@ -98,9 +96,14 @@ export default function RunListPage() {
           <h1 style={{ margin: 0, fontSize: 28 }}>Ambara Transcript Editor</h1>
           <p style={{ color: "#888", margin: "4px 0 0" }}>Select a run to start labelling</p>
         </div>
-        <button onClick={handleLogout} style={logoutButtonStyle}>
-          Sign out
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => router.push("/read")} style={newSessionButtonStyle}>
+            New Reading Session
+          </button>
+          <button onClick={handleLogout} style={logoutButtonStyle}>
+            Sign out
+          </button>
+        </div>
       </div>
 
       {runs.length === 0 && (
@@ -129,7 +132,12 @@ export default function RunListPage() {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 16 }}>{run.label}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 16 }}>{run.label}</span>
+                    {run.type === "reading" && (
+                      <span style={readingBadgeStyle}>reading</span>
+                    )}
+                  </div>
                   {run.source && (
                     <div style={{ color: "#666", fontSize: 13, marginTop: 2 }}>{run.source}</div>
                   )}
@@ -185,4 +193,24 @@ const logoutButtonStyle: React.CSSProperties = {
   borderRadius: 6,
   cursor: "pointer",
   fontSize: 13,
+};
+
+const newSessionButtonStyle: React.CSSProperties = {
+  padding: "6px 14px",
+  background: "#1d4ed8",
+  color: "#fff",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 500,
+};
+
+const readingBadgeStyle: React.CSSProperties = {
+  padding: "1px 6px",
+  background: "#1e3a5f",
+  color: "#60a5fa",
+  borderRadius: 4,
+  fontSize: 11,
+  fontWeight: 500,
 };

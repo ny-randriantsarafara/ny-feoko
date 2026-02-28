@@ -7,9 +7,19 @@ import type { Tables } from "@/lib/supabase/types";
 import ClipList from "@/components/ClipList";
 import type { StatusFilter } from "@/components/ClipList";
 import ClipEditor from "@/components/ClipEditor";
+import ChapterSplitter from "@/components/ChapterSplitter";
+import ChunkRecorder from "@/components/ChunkRecorder";
 import SessionStats from "@/components/SessionStats";
 
 type Clip = Tables<"clips">;
+type Mode = "transcribe" | "split" | "record";
+
+function defaultModeForClip(clip: Clip): Mode {
+  if (clip.paragraphs !== null && clip.paragraphs !== undefined) {
+    return "split";
+  }
+  return "transcribe";
+}
 
 export default function RunEditorPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -27,6 +37,7 @@ export default function RunEditorPage() {
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set());
   const [sessionDoneCount, setSessionDoneCount] = useState(0);
   const sessionStartRef = useRef(Date.now());
+  const [mode, setMode] = useState<Mode>("transcribe");
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -71,6 +82,14 @@ export default function RunEditorPage() {
   useEffect(() => {
     fetchClips();
   }, [fetchClips]);
+
+  const selectedClip = clips.find((c) => c.id === selectedId);
+
+  useEffect(() => {
+    if (selectedClip) {
+      setMode(defaultModeForClip(selectedClip));
+    }
+  }, [selectedClip?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredClips = useMemo(() => {
     if (filter === "all") return clips;
@@ -189,7 +208,6 @@ export default function RunEditorPage() {
     setSelectedId(filteredClips[selectedIndex - 1].id);
   }, [selectedIndex, filteredClips]);
 
-  const selectedClip = clips.find((c) => c.id === selectedId);
   const isLastClip = selectedIndex === filteredClips.length - 1;
 
   const handleClipSelect = useCallback((id: string) => {
@@ -249,6 +267,22 @@ export default function RunEditorPage() {
       return !prev;
     });
   }, []);
+
+  const handleRecorded = useCallback(() => {
+    setClips((prev) =>
+      prev.map((c) =>
+        c.id === selectedId ? { ...c, status: "corrected" as const } : c
+      )
+    );
+    setSessionDoneCount((prev) => prev + 1);
+
+    const nextPending = filteredClips.find(
+      (c, i) => i > selectedIndex && c.status === "pending",
+    );
+    if (nextPending) {
+      setSelectedId(nextPending.id);
+    }
+  }, [selectedId, selectedIndex, filteredClips]);
 
   if (error) {
     return (
@@ -341,16 +375,52 @@ export default function RunEditorPage() {
           sessionStartMs={sessionStartRef.current}
           pendingCount={pendingCount}
         />
+
+        {selectedClip && (
+          <div className="flex border-b border-gray-700 bg-[#111] shrink-0">
+            {(["transcribe", "split", "record"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                  mode === m
+                    ? "text-white border-b-2 border-blue-500"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {m === "transcribe" ? "Transcribe" : m === "split" ? "Split" : "Record"}
+              </button>
+            ))}
+          </div>
+        )}
+
         {selectedClip ? (
-          <ClipEditor
-            clip={selectedClip}
-            audioUrl={currentAudioUrl}
-            onSave={handleSave}
-            onAutoSave={handleAutoSave}
-            onNext={goNext}
-            onPrev={goPrev}
-            isLastClip={isLastClip}
-          />
+          mode === "split" ? (
+            <ChapterSplitter
+              clipId={selectedClip.id}
+              runId={runId}
+              audioUrl={currentAudioUrl}
+              fileName={selectedClip.file_name}
+              paragraphs={selectedClip.paragraphs ?? []}
+              onSplitComplete={fetchClips}
+            />
+          ) : mode === "record" ? (
+            <ChunkRecorder
+              clip={selectedClip}
+              runId={runId}
+              onRecorded={handleRecorded}
+            />
+          ) : (
+            <ClipEditor
+              clip={selectedClip}
+              audioUrl={currentAudioUrl}
+              onSave={handleSave}
+              onAutoSave={handleAutoSave}
+              onNext={goNext}
+              onPrev={goPrev}
+              isLastClip={isLastClip}
+            />
+          )
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             {clips.length === 0 ? "Loading clips..." : "Select a clip to start editing"}

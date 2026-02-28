@@ -168,7 +168,7 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
   }, [handleSave, handleAcceptDraft, guardedNext, guardedPrev, replay, togglePlay, jumpBack, changeSpeed, speed]);
 
   return (
-    <div className="flex-1 p-4 md:p-6 flex flex-col gap-4">
+    <div className="flex-1 p-4 md:p-6 flex flex-col gap-4 overflow-y-auto">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
         <h2 className="m-0 font-mono text-base md:text-lg truncate">
           {clip.file_name.replace("clips/", "")}
@@ -244,8 +244,8 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         className="flex-1 min-h-[150px] md:min-h-[200px] p-4 text-base md:text-lg leading-relaxed font-sans bg-[#1e1e1e] text-gray-200 border border-gray-700 rounded-lg resize-y focus:outline-none focus:border-blue-500"
       />
 
-      <div className="flex flex-col sm:flex-row gap-2 sm:justify-between">
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:justify-between">
+        <div className="flex flex-wrap gap-2">
           <button onClick={guardedPrev} className="btn flex-1 sm:flex-none">
             Prev ({labels.prev})
           </button>
@@ -253,7 +253,7 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
             Next ({labels.next})
           </button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => handleSave("discarded")}
             className="btn bg-red-900 hover:bg-red-800 flex-1 sm:flex-none"

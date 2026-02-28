@@ -82,6 +82,25 @@ def export_training_cmd(
     )
 
 
+@app.command("dump")
+def dump_cmd(
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output SQL file path (default: data/backups/dump-<timestamp>.sql)"
+    ),
+) -> None:
+    """Dump all table data as SQL INSERT statements for backup before migrations."""
+    from datetime import UTC, datetime
+
+    from db_sync.dump import dump_database
+    from db_sync.supabase_client import get_client
+
+    client = get_client()
+    resolved_output = output or Path(
+        f"data/backups/dump-{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%S')}.sql"
+    )
+    dump_database(client, resolved_output)
+
+
 @app.command("delete-run")
 def delete_run_cmd(
     run: Optional[str] = typer.Option(None, "--run", help="Run UUID"),
