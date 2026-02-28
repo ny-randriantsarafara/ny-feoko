@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from ny_feoko_shared.formatting import format_duration
 from rich.console import Console
 
 console = Console()
@@ -138,14 +139,6 @@ def _sync(run_dir: Path, label: str) -> None:
     sync_run(client, run_dir, label)
 
 
-def _format_duration(seconds: float) -> str:
-    if seconds < 60:
-        return f"{seconds:.0f}s"
-    minutes = int(seconds // 60)
-    secs = int(seconds % 60)
-    return f"{minutes}m {secs}s"
-
-
 def _print_ingest_summary(
     *,
     run_dir: Path,
@@ -164,10 +157,10 @@ def _print_ingest_summary(
     table.add_column("time")
 
     if is_url:
-        table.add_row("Download", _format_duration(download_sec))
-    table.add_row("Extract", _format_duration(extract_sec))
-    table.add_row("Sync to Supabase", _format_duration(sync_sec))
-    table.add_row("Total", f"[bold]{_format_duration(total_sec)}[/]")
+        table.add_row("Download", format_duration(download_sec))
+    table.add_row("Extract", format_duration(extract_sec))
+    table.add_row("Sync to Supabase", format_duration(sync_sec))
+    table.add_row("Total", f"[bold]{format_duration(total_sec)}[/]")
 
     console.print()
     console.print(Panel(table, title="Ingest Timing", border_style="blue"))

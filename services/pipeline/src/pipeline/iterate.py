@@ -5,7 +5,9 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from ny_feoko_shared.formatting import format_duration
 from rich.console import Console
+from supabase import Client
 
 from db_sync.export import _resolve_run_id
 from db_sync.supabase_client import get_client
@@ -83,16 +85,16 @@ def iterate(
     return model_dir
 
 
-def _fetch_status_counts(client: object, run_id: str) -> dict[str, int]:
+def _fetch_status_counts(client: Client, run_id: str) -> dict[str, int]:
     from db_sync.export import fetch_clip_status_counts
 
     return fetch_clip_status_counts(client, run_id)
 
 
-def _ensure_source_dir(client: object, run_id: str, label: str) -> Path:
+def _ensure_source_dir(client: Client, run_id: str, label: str) -> Path:
     """Get the local source directory for a run, downloading clips from Storage if needed."""
     result = (
-        client.table("runs")  # type: ignore[union-attr]
+        client.table("runs")
         .select("source")
         .eq("id", run_id)
         .limit(1)
@@ -113,7 +115,7 @@ def _ensure_source_dir(client: object, run_id: str, label: str) -> Path:
 
 
 def _export(
-    client: object,
+    client: Client,
     run_id: str,
     source_dir: Path,
     output: Path,
@@ -166,7 +168,7 @@ def _push(model_dir: Path, repo_id: str) -> None:
 
 
 def _redraft(
-    client: object,
+    client: Client,
     model_path: str,
     source_dir: Path,
     run_id: str,
@@ -181,18 +183,6 @@ def _redraft(
         run_id=run_id,
         device=device,
     )
-
-
-def _format_duration(seconds: float) -> str:
-    if seconds < 60:
-        return f"{seconds:.0f}s"
-    minutes = int(seconds // 60)
-    secs = int(seconds % 60)
-    if minutes < 60:
-        return f"{minutes}m {secs}s"
-    hours = int(minutes // 60)
-    mins = minutes % 60
-    return f"{hours}h {mins}m"
 
 
 def _print_iterate_summary(
@@ -212,10 +202,10 @@ def _print_iterate_summary(
     timing = Table(show_header=False, box=None, padding=(0, 2))
     timing.add_column("step", style="dim")
     timing.add_column("time")
-    timing.add_row("Export", _format_duration(export_sec))
-    timing.add_row("Train", _format_duration(train_sec))
-    timing.add_row("Re-draft", _format_duration(redraft_sec))
-    timing.add_row("Total", f"[bold]{_format_duration(total_sec)}[/]")
+    timing.add_row("Export", format_duration(export_sec))
+    timing.add_row("Train", format_duration(train_sec))
+    timing.add_row("Re-draft", format_duration(redraft_sec))
+    timing.add_row("Total", f"[bold]{format_duration(total_sec)}[/]")
 
     console.print()
     console.print(Panel(timing, title="Iteration Timing", border_style="blue"))
