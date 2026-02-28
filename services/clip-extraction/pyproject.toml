@@ -7,6 +7,7 @@ name = "clip-extraction"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "asr-training",
     "ny-feoko-shared",
     "torch>=2.10",
     "torchaudio>=2.10",

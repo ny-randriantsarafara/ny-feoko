@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import torch
 import numpy as np
+import torch
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
+from asr_training.config import DECODER_MAX_TOKENS
 from clip_extraction.domain.ports import TranscriberPort
 
 
@@ -41,7 +42,7 @@ class HuggingFaceTranscriber(TranscriberPort):
             predicted_ids = self.model.generate(
                 input_features,
                 forced_decoder_ids=forced_decoder_ids,
-                max_new_tokens=448,
+                max_new_tokens=DECODER_MAX_TOKENS,
             )
 
         text = self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()

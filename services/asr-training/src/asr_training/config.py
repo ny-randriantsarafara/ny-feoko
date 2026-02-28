@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Shared across training and inference. 448 = max label length; 444 leaves room for decoder start tokens.
+DECODER_MAX_TOKENS = 448
+DECODER_MAX_TOKENS_WITH_MARGIN = 444
+
 
 @dataclass(frozen=True)
 class TrainingConfig:

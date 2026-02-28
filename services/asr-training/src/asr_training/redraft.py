@@ -11,6 +11,9 @@ from rich.progress import Progress
 from supabase import Client
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
+from asr_training.config import DECODER_MAX_TOKENS_WITH_MARGIN
+from db_sync.pagination import paginate_table
+
 console = Console()
 
 SAMPLE_RATE = 16_000
@@ -109,7 +112,7 @@ def _transcribe_clip(
         predicted_ids = model.generate(
             input_features,
             forced_decoder_ids=forced_decoder_ids,
-            max_new_tokens=444,  # 448 - 4 to leave room for decoder start tokens
+            max_new_tokens=DECODER_MAX_TOKENS_WITH_MARGIN,
         )
 
     return processor.batch_decode(
@@ -121,24 +124,9 @@ def _fetch_pending_clips(
     client: Client, run_id: str
 ) -> list[dict[str, str]]:
     """Fetch all pending clips for a run, paginated."""
-    all_rows: list[dict[str, str]] = []
-    page_size = 1000
-    offset = 0
-
-    while True:
-        result = (
-            client.table("clips")
-            .select("id,file_name")
-            .eq("run_id", run_id)
-            .eq("status", "pending")
-            .range(offset, offset + page_size - 1)
-            .execute()
-        )
-        if not result.data:
-            break
-        all_rows.extend(result.data)
-        if len(result.data) < page_size:
-            break
-        offset += page_size
-
-    return all_rows
+    return paginate_table(
+        client,
+        "clips",
+        columns="id,file_name",
+        filters={"run_id": run_id, "status": "pending"},
+    )

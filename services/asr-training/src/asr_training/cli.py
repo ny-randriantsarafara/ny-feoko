@@ -78,7 +78,7 @@ def re_draft(
 ) -> None:
     """Re-transcribe pending clips using a fine-tuned model and update Supabase."""
     from asr_training.redraft import redraft_pending
-    from db_sync.export import _resolve_run_id
+    from db_sync.run_resolution import resolve_run_id
     from db_sync.supabase_client import get_client
 
     resolved_source = source_dir.resolve()
@@ -86,7 +86,7 @@ def re_draft(
         raise typer.BadParameter(f"Directory not found: {resolved_source}")
 
     client = get_client()
-    run_id = _resolve_run_id(client, run_id=run, label=label)
+    run_id = resolve_run_id(client, run_id=run, label=label)
     resolved_device = detect_device(device)
 
     redraft_pending(
