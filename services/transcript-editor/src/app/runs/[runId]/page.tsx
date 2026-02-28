@@ -10,6 +10,8 @@ import ClipEditor from "@/components/ClipEditor";
 import ChapterSplitter from "@/components/ChapterSplitter";
 import ChunkRecorder from "@/components/ChunkRecorder";
 import SessionStats from "@/components/SessionStats";
+import ToastContainer from "@/components/Toast";
+import type { ToastData } from "@/components/Toast";
 
 type Clip = Tables<"clips">;
 type Mode = "transcribe" | "split" | "record";
@@ -28,7 +30,7 @@ export default function RunEditorPage() {
 
   const [clips, setClips] = useState<Clip[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
+  const [audioUrls, setAudioUrls] = useState<Record<string, { url: string; fetchedAt: number }>>({});
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -38,6 +40,37 @@ export default function RunEditorPage() {
   const [sessionDoneCount, setSessionDoneCount] = useState(0);
   const sessionStartRef = useRef(Date.now());
   const [mode, setMode] = useState<Mode>("transcribe");
+  const [toasts, setToasts] = useState<ToastData[]>([]);
+  const editorDirtyRef = useRef(false);
+
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    editorDirtyRef.current = dirty;
+  }, []);
+
+  const guardedSetMode = useCallback((newMode: Mode) => {
+    if (editorDirtyRef.current) {
+      const proceed = window.confirm("You have unsaved changes. Discard them?");
+      if (!proceed) return;
+    }
+    setMode(newMode);
+  }, []);
+
+  const guardedSelectClip = useCallback((id: string) => {
+    if (editorDirtyRef.current) {
+      const proceed = window.confirm("You have unsaved changes. Discard them?");
+      if (!proceed) return;
+    }
+    setSelectedId(id);
+    setSidebarOpen(false);
+  }, []);
+
+  const addToast = useCallback((toast: ToastData) => {
+    setToasts((prev) => [...prev, toast]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -74,6 +107,13 @@ export default function RunEditorPage() {
     setSelectedId((prev) => {
       if (prev !== null) return prev;
       if (sorted.length === 0) return null;
+
+      const lastClipKey = `lastClip-${runId}`;
+      const stored = localStorage.getItem(lastClipKey);
+      if (stored && sorted.some((c) => c.id === stored)) {
+        return stored;
+      }
+
       const firstPending = sorted.find((c) => c.status === "pending");
       return firstPending?.id ?? sorted[0].id;
     });
@@ -84,6 +124,12 @@ export default function RunEditorPage() {
   }, [fetchClips]);
 
   const selectedClip = clips.find((c) => c.id === selectedId);
+
+  useEffect(() => {
+    if (selectedId && runId) {
+      localStorage.setItem(`lastClip-${runId}`, selectedId);
+    }
+  }, [selectedId, runId]);
 
   useEffect(() => {
     if (selectedClip) {
@@ -101,16 +147,25 @@ export default function RunEditorPage() {
     [clips],
   );
 
-  const getAudioUrl = useCallback(async (clip: Clip): Promise<string> => {
+  const URL_MAX_AGE_MS = 50 * 60 * 1000;
+
+  const getAudioUrl = useCallback(async (clip: Clip, forceRefresh = false): Promise<string> => {
+    if (!forceRefresh) {
+      const cached = audioUrls[clip.id];
+      if (cached && Date.now() - cached.fetchedAt < URL_MAX_AGE_MS) {
+        return cached.url;
+      }
+    }
+
     const storagePath = `${runId}/${clip.file_name}`;
     const { data } = await supabase.storage
       .from("clips")
       .createSignedUrl(storagePath, 3600);
 
     const url = data?.signedUrl ?? "";
-    setAudioUrls((prev) => ({ ...prev, [clip.id]: url }));
+    setAudioUrls((prev) => ({ ...prev, [clip.id]: { url, fetchedAt: Date.now() } }));
     return url;
-  }, [runId, supabase]);
+  }, [runId, supabase, audioUrls]);
 
   const [currentAudioUrl, setCurrentAudioUrl] = useState("");
 
@@ -119,13 +174,48 @@ export default function RunEditorPage() {
     if (!selected) return;
 
     const cached = audioUrls[selected.id];
-    if (cached) {
-      setCurrentAudioUrl(cached);
+    if (cached && Date.now() - cached.fetchedAt < URL_MAX_AGE_MS) {
+      setCurrentAudioUrl(cached.url);
     } else {
       getAudioUrl(selected).then(setCurrentAudioUrl);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, clips, getAudioUrl]);
+  }, [selectedId, clips]);
+
+  useEffect(() => {
+    const selectedIdx = filteredClips.findIndex((c) => c.id === selectedId);
+    if (selectedIdx < 0) return;
+
+    const upcoming = filteredClips.slice(selectedIdx + 1, selectedIdx + 3);
+
+    for (const clip of upcoming) {
+      getAudioUrl(clip).then((url) => {
+        if (url) {
+          const audio = new Audio(url);
+          audio.preload = "auto";
+          audio.load();
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const selected = clips.find((c) => c.id === selectedId);
+      if (!selected) return;
+
+      const cached = audioUrls[selected.id];
+      if (cached && Date.now() - cached.fetchedAt > 45 * 60 * 1000) {
+        getAudioUrl(selected, true).then(setCurrentAudioUrl);
+      }
+    }, 10 * 60 * 1000);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, clips]);
+
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const handleSave = useCallback(
     async (transcription: string, status: "corrected" | "discarded") => {
@@ -133,47 +223,58 @@ export default function RunEditorPage() {
 
       const currentClip = clips.find((c) => c.id === selectedId);
       const previousValue = currentClip?.corrected_transcription ?? currentClip?.draft_transcription ?? "";
-
-      const { error: updateError } = await supabase
-        .from("clips")
-        .update({
-          corrected_transcription: transcription,
-          status,
-          corrected_at: new Date().toISOString(),
-          corrected_by: userId,
-        })
-        .eq("id", selectedId);
-
-      if (updateError) {
-        setError(updateError.message);
-        return;
-      }
-
-      await supabase.from("clip_edits").insert({
-        clip_id: selectedId,
-        editor_id: userId,
-        field: "corrected_transcription",
-        old_value: previousValue,
-        new_value: transcription,
-      });
+      const savedClipId = selectedId;
+      const savedAt = new Date().toISOString();
 
       setClips((prev) =>
         prev.map((c) =>
-          c.id === selectedId
+          c.id === savedClipId
             ? {
                 ...c,
                 corrected_transcription: transcription,
                 status,
-                corrected_at: new Date().toISOString(),
+                corrected_at: savedAt,
                 corrected_by: userId,
               }
             : c
         )
       );
-
       setSessionDoneCount((prev) => prev + 1);
+
+      saveQueueRef.current = saveQueueRef.current.then(async () => {
+        const { error: updateError } = await supabase
+          .from("clips")
+          .update({
+            corrected_transcription: transcription,
+            status,
+            corrected_at: savedAt,
+            corrected_by: userId,
+          })
+          .eq("id", savedClipId);
+
+        if (updateError) {
+          addToast({
+            id: `save-error-${Date.now()}`,
+            message: `Save failed: ${updateError.message}`,
+            durationMs: 8000,
+            action: {
+              label: "Retry",
+              onClick: () => { handleSave(transcription, status); },
+            },
+          });
+          return;
+        }
+
+        await supabase.from("clip_edits").insert({
+          clip_id: savedClipId,
+          editor_id: userId,
+          field: "corrected_transcription",
+          old_value: previousValue,
+          new_value: transcription,
+        });
+      });
     },
-    [selectedId, userId, clips, supabase]
+    [selectedId, userId, clips, supabase, addToast]
   );
 
   const handleAutoSave = useCallback(
@@ -196,6 +297,119 @@ export default function RunEditorPage() {
     [selectedId, userId, supabase]
   );
 
+  const handleDiscardWithUndo = useCallback(
+    async (transcription: string) => {
+      if (!selectedId || !userId) return;
+
+      const clipBefore = clips.find((c) => c.id === selectedId);
+      if (!clipBefore) return;
+
+      const previousStatus = clipBefore.status;
+      const previousTranscription = clipBefore.corrected_transcription;
+      const discardedClipId = selectedId;
+
+      setClips((prev) =>
+        prev.map((c) =>
+          c.id === discardedClipId
+            ? {
+                ...c,
+                corrected_transcription: transcription,
+                status: "discarded" as const,
+                corrected_at: new Date().toISOString(),
+                corrected_by: userId,
+              }
+            : c
+        )
+      );
+      setSessionDoneCount((prev) => prev + 1);
+
+      const nextPendingIdx = filteredClips.findIndex(
+        (c, i) => i > filteredClips.findIndex((fc) => fc.id === selectedId) && c.status === "pending",
+      );
+      if (nextPendingIdx >= 0) {
+        setSelectedId(filteredClips[nextPendingIdx].id);
+      }
+
+      const toastId = `discard-${Date.now()}`;
+      let undone = false;
+
+      addToast({
+        id: toastId,
+        message: "Clip discarded.",
+        durationMs: 5000,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            undone = true;
+            setClips((prev) =>
+              prev.map((c) =>
+                c.id === discardedClipId
+                  ? { ...c, status: previousStatus, corrected_transcription: previousTranscription }
+                  : c
+              )
+            );
+            setSessionDoneCount((prev) => Math.max(0, prev - 1));
+            setSelectedId(discardedClipId);
+
+            supabase
+              .from("clips")
+              .update({
+                status: previousStatus,
+                corrected_transcription: previousTranscription,
+                corrected_at: clipBefore.corrected_at,
+                corrected_by: clipBefore.corrected_by,
+              })
+              .eq("id", discardedClipId)
+              .then();
+          },
+        },
+      });
+
+      setTimeout(async () => {
+        if (undone) return;
+        await supabase
+          .from("clips")
+          .update({
+            corrected_transcription: transcription,
+            status: "discarded" as const,
+            corrected_at: new Date().toISOString(),
+            corrected_by: userId,
+          })
+          .eq("id", discardedClipId);
+
+        await supabase.from("clip_edits").insert({
+          clip_id: discardedClipId,
+          editor_id: userId,
+          field: "corrected_transcription",
+          old_value: previousTranscription ?? "",
+          new_value: transcription,
+        });
+      }, 5500);
+    },
+    [selectedId, userId, clips, filteredClips, supabase, addToast]
+  );
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isCtrl = e.ctrlKey || e.metaKey;
+      if (!isCtrl) return;
+
+      if (e.key === "1") {
+        e.preventDefault();
+        guardedSetMode("transcribe");
+      } else if (e.key === "2") {
+        e.preventDefault();
+        guardedSetMode("split");
+      } else if (e.key === "3") {
+        e.preventDefault();
+        guardedSetMode("record");
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [guardedSetMode]);
+
   const selectedIndex = filteredClips.findIndex((c) => c.id === selectedId);
 
   const goNext = useCallback(() => {
@@ -211,9 +425,8 @@ export default function RunEditorPage() {
   const isLastClip = selectedIndex === filteredClips.length - 1;
 
   const handleClipSelect = useCallback((id: string) => {
-    setSelectedId(id);
-    setSidebarOpen(false);
-  }, []);
+    guardedSelectClip(id);
+  }, [guardedSelectClip]);
 
   const handleToggleBulkSelect = useCallback((id: string) => {
     setBulkSelectedIds((prev) => {
@@ -267,6 +480,73 @@ export default function RunEditorPage() {
       return !prev;
     });
   }, []);
+
+  const handleMergeBack = useCallback(async (originClipId: string) => {
+    const originClip = clips.find((c) => c.id === originClipId);
+    if (!originClip || !originClip.corrected_transcription) return;
+
+    let splitData: { childFileNames: string[]; archivePath: string };
+    try {
+      splitData = JSON.parse(originClip.corrected_transcription);
+      if (!splitData.childFileNames || !splitData.archivePath) return;
+    } catch {
+      return;
+    }
+
+    const childClips = clips.filter((c) =>
+      splitData.childFileNames.includes(c.file_name),
+    );
+    const hasEditedChildren = childClips.some((c) => c.status === "corrected");
+    if (hasEditedChildren) {
+      addToast({
+        id: `merge-blocked-${Date.now()}`,
+        message: "Cannot merge: some child clips have been corrected.",
+        durationMs: 5000,
+      });
+      return;
+    }
+
+    const originalStoragePath = `${runId}/${originClip.file_name}`;
+    const { error: copyError } = await supabase.storage
+      .from("clips")
+      .copy(splitData.archivePath, originalStoragePath);
+
+    if (copyError) {
+      addToast({
+        id: `merge-error-${Date.now()}`,
+        message: `Merge failed: ${copyError.message}`,
+        durationMs: 5000,
+      });
+      return;
+    }
+
+    await supabase
+      .from("clips")
+      .update({
+        status: "pending" as const,
+        corrected_transcription: null,
+        corrected_at: null,
+        corrected_by: null,
+      })
+      .eq("id", originClipId);
+
+    const childIds = childClips.map((c) => c.id);
+    if (childIds.length > 0) {
+      const childPaths = childClips.map((c) => `${runId}/${c.file_name}`);
+      await supabase.storage.from("clips").remove(childPaths);
+      await supabase.from("clips").delete().in("id", childIds);
+    }
+
+    await supabase.storage.from("clips").remove([splitData.archivePath]);
+
+    addToast({
+      id: `merge-done-${Date.now()}`,
+      message: "Clips merged back successfully.",
+      durationMs: 3000,
+    });
+
+    fetchClips();
+  }, [clips, runId, supabase, addToast, fetchClips]);
 
   const handleRecorded = useCallback(() => {
     setClips((prev) =>
@@ -356,6 +636,7 @@ export default function RunEditorPage() {
           selectMode={selectMode}
           selectedIds={bulkSelectedIds}
           onToggleSelect={handleToggleBulkSelect}
+          onMergeBack={handleMergeBack}
         />
         {selectMode && bulkSelectedIds.size > 0 && (
           <div className="px-4 py-2 border-t border-gray-700 bg-[#111]">
@@ -381,7 +662,7 @@ export default function RunEditorPage() {
             {(["transcribe", "split", "record"] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => setMode(m)}
+                onClick={() => guardedSetMode(m)}
                 className={`flex-1 py-2 text-sm font-medium transition-colors ${
                   mode === m
                     ? "text-white border-b-2 border-blue-500"
@@ -419,6 +700,8 @@ export default function RunEditorPage() {
               onNext={goNext}
               onPrev={goPrev}
               isLastClip={isLastClip}
+              onDiscard={handleDiscardWithUndo}
+              onDirtyChange={handleDirtyChange}
             />
           )
         ) : (
@@ -427,6 +710,8 @@ export default function RunEditorPage() {
           </div>
         )}
       </div>
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

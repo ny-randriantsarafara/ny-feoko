@@ -2,6 +2,7 @@
 
 import {
   useRef,
+  useState,
   useEffect,
   useImperativeHandle,
   forwardRef,
@@ -33,9 +34,12 @@ const Waveform = forwardRef<WaveformHandle, WaveformProps>(function Waveform(
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
+
+    setIsReady(false);
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
@@ -53,9 +57,10 @@ const Waveform = forwardRef<WaveformHandle, WaveformProps>(function Waveform(
     ws.on("play", onPlay);
     ws.on("pause", onPause);
     ws.on("finish", onFinish);
-    if (onReady) {
-      ws.on("ready", onReady);
-    }
+    ws.on("ready", () => {
+      setIsReady(true);
+      onReady?.();
+    });
 
     ws.load(audioUrl);
     wsRef.current = ws;
@@ -117,10 +122,17 @@ const Waveform = forwardRef<WaveformHandle, WaveformProps>(function Waveform(
   }));
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full rounded-lg bg-[#1a1a2e] border border-[#2a2a4a] p-2 cursor-pointer"
-    />
+    <div className="relative">
+      {!isReady && (
+        <div className="absolute inset-0 rounded-lg bg-[#1a1a2e] border border-[#2a2a4a] p-2 z-10">
+          <div className="w-full h-full rounded bg-gray-800 animate-pulse" />
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="w-full rounded-lg bg-[#1a1a2e] border border-[#2a2a4a] p-2 cursor-pointer"
+      />
+    </div>
   );
 });
 

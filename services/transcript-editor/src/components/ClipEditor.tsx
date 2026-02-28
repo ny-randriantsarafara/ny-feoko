@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import type { Tables } from "@/lib/supabase/types";
 import { useShortcutLabels } from "@/hooks/useShortcutLabels";
+import { wordDiff } from "@/lib/word-diff";
 import Waveform from "@/components/Waveform";
 import type { WaveformHandle } from "@/components/Waveform";
 
@@ -13,22 +14,75 @@ const JUMP_BACK_SECONDS = 3;
 const AUTOSAVE_DELAY_MS = 2000;
 
 interface ClipEditorProps {
-  clip: Clip;
-  audioUrl: string;
-  onSave: (transcription: string, status: "corrected" | "discarded") => Promise<void>;
-  onAutoSave: (transcription: string) => Promise<void>;
-  onNext: () => void;
-  onPrev: () => void;
-  isLastClip: boolean;
+  readonly clip: Clip;
+  readonly audioUrl: string;
+  readonly onSave: (transcription: string, status: "corrected" | "discarded") => Promise<void>;
+  readonly onAutoSave: (transcription: string) => Promise<void>;
+  readonly onNext: () => void;
+  readonly onPrev: () => void;
+  readonly isLastClip: boolean;
+  readonly onDiscard?: (transcription: string) => Promise<void>;
+  readonly onDirtyChange?: (dirty: boolean) => void;
 }
 
-export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext, onPrev, isLastClip }: ClipEditorProps) {
+function DiffPanel({
+  draft,
+  current,
+  show,
+  onToggle,
+}: {
+  readonly draft: string;
+  readonly current: string;
+  readonly show: boolean;
+  readonly onToggle: () => void;
+}) {
+  const segments = useMemo(() => wordDiff(draft, current), [draft, current]);
+  const hasChanges = segments.some((s) => s.type !== "equal");
+
+  if (!hasChanges) return null;
+
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+      >
+        {show ? "Hide Changes" : "Show Changes"}
+      </button>
+      {show && (
+        <div className="mt-1 p-3 bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg text-sm leading-relaxed max-h-32 overflow-y-auto">
+          {segments.map((seg, i) => {
+            if (seg.type === "added") {
+              return (
+                <span key={i} className="bg-green-900/40 text-green-300">
+                  {seg.text}
+                </span>
+              );
+            }
+            if (seg.type === "removed") {
+              return (
+                <span key={i} className="bg-red-900/40 text-red-400 line-through">
+                  {seg.text}
+                </span>
+              );
+            }
+            return <span key={i}>{seg.text}</span>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext, onPrev, isLastClip, onDiscard, onDirtyChange }: ClipEditorProps) {
   const waveformRef = useRef<WaveformHandle>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const originalText = clip.corrected_transcription ?? clip.draft_transcription ?? "";
   const [text, setText] = useState(originalText);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved">("");
+  const [showSaveFlash, setShowSaveFlash] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(() => {
     if (typeof window === "undefined") return 1;
@@ -38,6 +92,10 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
   const { labels } = useShortcutLabels();
 
   const isDirty = text !== originalText;
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   useEffect(() => {
     setText(clip.corrected_transcription ?? clip.draft_transcription ?? "");
@@ -55,7 +113,13 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
 
     const timer = setTimeout(() => {
       setSaveStatus("saving");
-      onAutoSave(text).then(() => setSaveStatus("saved")).catch(() => setSaveStatus(""));
+      onAutoSave(text)
+        .then(() => {
+          setSaveStatus("saved");
+          setShowSaveFlash(true);
+          setTimeout(() => setShowSaveFlash(false), 1500);
+        })
+        .catch(() => setSaveStatus(""));
     }, AUTOSAVE_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -145,7 +209,11 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         replay();
       } else if (isCtrl && e.key === "d") {
         e.preventDefault();
-        handleSave("discarded");
+        if (onDiscard) {
+          onDiscard(text);
+        } else {
+          handleSave("discarded");
+        }
       } else if (isCtrl && e.key === " ") {
         e.preventDefault();
         togglePlay();
@@ -165,7 +233,7 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleSave, handleAcceptDraft, guardedNext, guardedPrev, replay, togglePlay, jumpBack, changeSpeed, speed]);
+  }, [handleSave, handleAcceptDraft, guardedNext, guardedPrev, replay, togglePlay, jumpBack, changeSpeed, speed, onDiscard, text]);
 
   return (
     <div className="flex-1 p-4 md:p-6 flex flex-col gap-4 overflow-y-auto">
@@ -189,7 +257,14 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
             {clip.status}
           </span>
           {saveStatus === "saving" && <span className="text-yellow-500">Saving...</span>}
-          {saveStatus === "saved" && <span className="text-green-500">Saved</span>}
+          {saveStatus === "saved" && (
+            <span className="text-green-400 flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Saved
+            </span>
+          )}
         </div>
       </div>
 
@@ -241,8 +316,21 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Type the Malagasy transcription here..."
-        className="flex-1 min-h-[150px] md:min-h-[200px] p-4 text-base md:text-lg leading-relaxed font-sans bg-[#1e1e1e] text-gray-200 border border-gray-700 rounded-lg resize-y focus:outline-none focus:border-blue-500"
+        className={`flex-1 min-h-[150px] md:min-h-[200px] p-4 text-base md:text-lg leading-relaxed font-sans bg-[#1e1e1e] text-gray-200 border-2 rounded-lg resize-y focus:outline-none transition-colors duration-300 ${
+          showSaveFlash
+            ? "border-green-500/70"
+            : "border-gray-700 focus:border-blue-500"
+        }`}
       />
+
+      {clip.draft_transcription && isDirty && (
+        <DiffPanel
+          draft={clip.draft_transcription}
+          current={text}
+          show={showDiff}
+          onToggle={() => setShowDiff((v) => !v)}
+        />
+      )}
 
       <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:justify-between">
         <div className="flex flex-wrap gap-2">
@@ -255,7 +343,13 @@ export default function ClipEditor({ clip, audioUrl, onSave, onAutoSave, onNext,
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => handleSave("discarded")}
+            onClick={() => {
+              if (onDiscard) {
+                onDiscard(text);
+              } else {
+                handleSave("discarded");
+              }
+            }}
             className="btn bg-red-900 hover:bg-red-800 flex-1 sm:flex-none"
           >
             Discard ({labels.discard})

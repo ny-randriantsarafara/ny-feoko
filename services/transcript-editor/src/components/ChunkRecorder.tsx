@@ -131,6 +131,31 @@ export default function ChunkRecorder({
     onRecorded();
   }, [recorder.wavBlob, recorder.durationSec, runId, clip.file_name, clip.id, chunkText, onRecorded]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === " ") {
+        e.preventDefault();
+        if (phase === "idle") {
+          handleRecord();
+        } else if (phase === "recording") {
+          handleStop();
+        } else if (phase === "reviewing" && audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play();
+        }
+      } else if (e.key === "Enter" && phase === "reviewing") {
+        e.preventDefault();
+        handleConfirm();
+      } else if (e.key === "Escape" && phase === "reviewing") {
+        e.preventDefault();
+        handleReRecord();
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [phase, handleRecord, handleStop, handleConfirm, handleReRecord]);
+
   const formatTime = (sec: number): string => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
@@ -235,6 +260,12 @@ export default function ChunkRecorder({
             <span className="text-gray-400 text-sm">Uploading...</span>
           </div>
         )}
+
+        <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1 justify-center mt-2">
+          <span>Space: {phase === "idle" ? "record" : phase === "recording" ? "stop" : "play"}</span>
+          {phase === "reviewing" && <span>Enter: confirm</span>}
+          {phase === "reviewing" && <span>Esc: re-record</span>}
+        </div>
       </div>
     </div>
   );
