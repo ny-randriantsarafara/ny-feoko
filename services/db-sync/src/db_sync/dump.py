@@ -8,6 +8,8 @@ from pathlib import Path
 from rich.console import Console
 from supabase import Client
 
+from db_sync.pagination import paginate_table
+
 console = Console()
 
 TABLES = ["runs", "clips", "clip_edits"]
@@ -23,7 +25,7 @@ def dump_database(client: Client, output: Path) -> None:
         f.write("BEGIN;\n\n")
 
         for table in TABLES:
-            rows = _fetch_all_rows(client, table)
+            rows = paginate_table(client, table)
             f.write(f"-- {table}: {len(rows)} rows\n")
 
             for row in rows:
@@ -36,33 +38,8 @@ def dump_database(client: Client, output: Path) -> None:
 
         f.write("COMMIT;\n")
 
-    total = sum(
-        len(_fetch_all_rows(client, t)) for t in TABLES
-    )
+    total = sum(len(paginate_table(client, t)) for t in TABLES)
     console.print(f"[bold green]Dumped {total} rows across {len(TABLES)} tables to {output}[/]")
-
-
-def _fetch_all_rows(client: Client, table: str) -> list[dict[str, object]]:
-    """Paginate through all rows in a table."""
-    all_rows: list[dict[str, object]] = []
-    page_size = 1000
-    offset = 0
-
-    while True:
-        result = (
-            client.table(table)
-            .select("*")
-            .range(offset, offset + page_size - 1)
-            .execute()
-        )
-        if not result.data:
-            break
-        all_rows.extend(result.data)
-        if len(result.data) < page_size:
-            break
-        offset += page_size
-
-    return all_rows
 
 
 def _sql_literal(value: object) -> str:

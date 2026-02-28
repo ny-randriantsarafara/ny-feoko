@@ -8,6 +8,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+from db_sync.exceptions import MissingConfigError
+
 
 def get_client() -> Client:
     """Create a Supabase client using service role key from environment.
@@ -21,7 +23,7 @@ def get_client() -> Client:
     key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
     if not url or not key:
-        raise SystemExit(
+        raise MissingConfigError(
             "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.\n"
             "Set them in .env at the repo root or export them."
         )

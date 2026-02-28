@@ -11,6 +11,13 @@ import pandas as pd
 from rich.console import Console
 from supabase import Client
 
+from db_sync.exceptions import RunNotFoundError, SyncError
+from db_sync.pagination import paginate_table
+from db_sync.run_resolution import resolve_label, resolve_run_id
+
+# Backward compatibility for pipeline/iterate.py and asr-training/cli.py
+_resolve_run_id = resolve_run_id
+
 console = Console()
 
 EXPORT_COLUMNS = [
@@ -33,7 +40,7 @@ def export_corrected(
     output: Path,
 ) -> None:
     """Export corrected clips to a CSV file."""
-    resolved_run_id = _resolve_run_id(client, run_id, label)
+    resolved_run_id = resolve_run_id(client, run_id, label)
     console.print(f"Exporting corrected clips for run [bold]{resolved_run_id}[/]...")
 
     all_rows = _fetch_corrected_clips(client, resolved_run_id, EXPORT_COLUMNS)
@@ -79,8 +86,8 @@ def export_training(
 
     Returns the path to the created dataset directory.
     """
-    resolved_run_id = _resolve_run_id(client, run_id, label)
-    resolved_label = _resolve_label(client, resolved_run_id)
+    resolved_run_id = resolve_run_id(client, run_id, label)
+    resolved_label = resolve_label(client, resolved_run_id)
     console.print(f"Exporting training data for run [bold]{resolved_label}[/]...")
 
     counts = fetch_clip_status_counts(client, resolved_run_id)
@@ -96,7 +103,7 @@ def export_training(
         client, resolved_run_id, ["file_name", "corrected_transcription"]
     )
     if not rows:
-        raise SystemExit("No corrected clips found for this run.")
+        raise SyncError("No corrected clips found for this run.")
 
     word_counts = [
         len(str(r["corrected_transcription"]).split())
@@ -127,7 +134,7 @@ def export_training(
         if not (source_dir / str(r["file_name"])).exists()
     ]
     if missing:
-        raise SystemExit(
+        raise SyncError(
             f"{len(missing)} clip files not found in {source_dir}. "
             f"First missing: {missing[0]}"
         )
@@ -138,7 +145,7 @@ def export_training(
         if overwrite:
             shutil.rmtree(dataset_dir)
         else:
-            raise SystemExit(f"Output directory already exists: {dataset_dir}")
+            raise SyncError(f"Output directory already exists: {dataset_dir}")
 
     rng = random.Random(seed)
     shuffled = list(rows)
@@ -190,59 +197,9 @@ def _fetch_corrected_clips(
     columns: list[str],
 ) -> list[dict[str, object]]:
     """Paginate through all corrected clips for a run."""
-    all_rows: list[dict[str, object]] = []
-    page_size = 1000
-    offset = 0
-
-    while True:
-        result = (
-            client.table("clips")
-            .select(",".join(columns))
-            .eq("run_id", run_id)
-            .eq("status", "corrected")
-            .range(offset, offset + page_size - 1)
-            .execute()
-        )
-        if not result.data:
-            break
-        all_rows.extend(result.data)
-        if len(result.data) < page_size:
-            break
-        offset += page_size
-
-    return all_rows
-
-
-def _resolve_run_id(
-    client: Client, run_id: str | None, label: str | None
-) -> str:
-    if run_id:
-        return run_id
-
-    if not label:
-        raise SystemExit("Provide --run or --label to identify the run.")
-
-    result = (
-        client.table("runs")
-        .select("id")
-        .eq("label", label)
-        .order("created_at", desc=True)
-        .limit(1)
-        .execute()
+    return paginate_table(
+        client,
+        "clips",
+        columns=",".join(columns),
+        filters={"run_id": run_id, "status": "corrected"},
     )
-    if not result.data:
-        raise SystemExit(f"No run found with label '{label}'")
-    return result.data[0]["id"]
-
-
-def _resolve_label(client: Client, run_id: str) -> str:
-    result = (
-        client.table("runs")
-        .select("label")
-        .eq("id", run_id)
-        .limit(1)
-        .execute()
-    )
-    if not result.data:
-        raise SystemExit(f"No run found with id '{run_id}'")
-    return result.data[0]["label"]

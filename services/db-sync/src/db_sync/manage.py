@@ -5,6 +5,8 @@ from __future__ import annotations
 from rich.console import Console
 from supabase import Client
 
+from db_sync.exceptions import RunNotFoundError
+
 console = Console()
 
 
@@ -66,7 +68,7 @@ def cleanup(
 def _fetch_run(client: Client, run_id: str) -> dict[str, object]:
     result = client.table("runs").select("*").eq("id", run_id).maybe_single().execute()
     if not result.data:
-        raise SystemExit(f"Run not found: {run_id}")
+        raise RunNotFoundError(f"Run not found: {run_id}")
     return result.data
 
 

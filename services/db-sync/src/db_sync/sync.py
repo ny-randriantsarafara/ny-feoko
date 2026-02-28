@@ -9,6 +9,8 @@ from rich.console import Console
 from rich.progress import Progress
 from supabase import Client
 
+from db_sync.exceptions import SyncError
+
 console = Console()
 
 CSV_TO_DB_COLUMNS: dict[str, str] = {
@@ -29,9 +31,9 @@ def sync_run(client: Client, run_dir: Path, label: str) -> None:
     clips_dir = run_dir / "clips"
 
     if not metadata_path.exists():
-        raise SystemExit(f"metadata.csv not found in {run_dir}")
+        raise SyncError(f"metadata.csv not found in {run_dir}")
     if not clips_dir.is_dir():
-        raise SystemExit(f"clips/ directory not found in {run_dir}")
+        raise SyncError(f"clips/ directory not found in {run_dir}")
 
     run_id = _create_run(client, label, source=str(run_dir))
     console.print(f"[bold green]Run created:[/] {run_id} ({label})")

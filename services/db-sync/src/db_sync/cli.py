@@ -7,6 +7,8 @@ from typing import Optional
 
 import typer
 
+from db_sync.exceptions import MissingConfigError, RunNotFoundError, SyncError
+
 app = typer.Typer(help="Ambara DB sync — push extraction runs to Supabase and export corrections.")
 
 
@@ -108,12 +110,12 @@ def delete_run_cmd(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Delete a run and all its clips, edits, and storage files."""
+    from db_sync.run_resolution import resolve_run_id
     from db_sync.supabase_client import get_client
-    from db_sync.export import _resolve_run_id
     from db_sync.manage import delete_run
 
     client = get_client()
-    run_id = _resolve_run_id(client, run_id=run, label=label)
+    run_id = resolve_run_id(client, run_id=run, label=label)
 
     if not yes:
         from db_sync.manage import _fetch_run, _count_clips
@@ -182,7 +184,11 @@ def cleanup_cmd(
 
 
 def main() -> None:
-    app()
+    try:
+        app()
+    except (RunNotFoundError, MissingConfigError, SyncError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":
