@@ -37,7 +37,7 @@ export function wordDiff(original: string, modified: string): DiffSegment[] {
       result.push({ text: oldWords[i], type: "equal" });
       i++;
       j++;
-    } else if (lcs[i + 1]?.[j] ?? 0 >= (lcs[i]?.[j + 1] ?? 0)) {
+    } else if ((lcs[i + 1]?.[j] ?? 0) >= (lcs[i]?.[j + 1] ?? 0)) {
       result.push({ text: oldWords[i], type: "removed" });
       i++;
     } else {
