@@ -142,6 +142,42 @@ export interface Database {
           },
         ];
       };
+      jobs: {
+        Row: {
+          id: string;
+          type: "ingest" | "redraft" | "export";
+          status: "queued" | "running" | "done" | "failed";
+          progress: number;
+          progress_message: string | null;
+          params: Record<string, unknown>;
+          result: Record<string, unknown> | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          type: "ingest" | "redraft" | "export";
+          status?: "queued" | "running" | "done" | "failed";
+          progress?: number;
+          progress_message?: string | null;
+          params?: Record<string, unknown>;
+          result?: Record<string, unknown> | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          type?: "ingest" | "redraft" | "export";
+          status?: "queued" | "running" | "done" | "failed";
+          progress?: number;
+          progress_message?: string | null;
+          params?: Record<string, unknown>;
+          result?: Record<string, unknown> | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
