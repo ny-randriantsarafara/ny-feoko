@@ -227,3 +227,60 @@ All commands are invoked via `./ambara <command> [options]`.
 |---------|-------------|
 | `setup` | Create venv and install all packages |
 | `install` | Install local packages (editable) |
+
+## 9. Observability
+
+The API includes built-in observability using OpenTelemetry for traces, metrics, and structured logging.
+
+### Telemetry Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `OTEL_ENDPOINT` | (none) | OTLP endpoint for traces/metrics export |
+| `OTEL_SERVICE_NAME` | `ambara-api` | Service name in telemetry data |
+| `OTEL_CONSOLE_EXPORT` | `true` | Export telemetry to console (for development) |
+
+### Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Health check — returns `{"status": "healthy"}` |
+| `GET /metrics` | Prometheus-format metrics |
+
+### Metrics
+
+The API tracks job-related metrics:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `jobs_started_total` | Counter | Number of jobs started (labeled by `job_type`) |
+| `jobs_completed_total` | Counter | Number of jobs completed (labeled by `job_type`, `success`) |
+| `job_duration_seconds` | Histogram | Job execution time (labeled by `job_type`) |
+
+### Traces
+
+HTTP requests are automatically instrumented via FastAPI auto-instrumentation. Each request creates a span with:
+- HTTP method, path, status code
+- Request/response timing
+
+### Structured Logging
+
+Logs include trace correlation fields for linking logs to traces:
+
+```
+2026-03-03 12:34:56 [INFO] uvicorn.access [trace_id=abc123... span_id=def456...] 127.0.0.1 - "GET /runs HTTP/1.1" 200
+```
+
+### Development Usage
+
+For local development, telemetry exports to console by default:
+
+```bash
+./ambara api  # Starts API with console telemetry
+```
+
+For production, set `OTEL_ENDPOINT` to your collector:
+
+```bash
+OTEL_ENDPOINT=http://otel-collector:4317 ./ambara api
+```
