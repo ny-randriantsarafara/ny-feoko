@@ -15,6 +15,7 @@ install:
 	$(PIP) install -e services/asr-training/
 	$(PIP) install -e services/clip-extraction/
 	$(PIP) install -e services/pipeline/
+	$(PIP) install -e services/api/
 
 colab-install:
 	pip install -q -e shared/
@@ -23,6 +24,7 @@ colab-install:
 	pip install -q -e services/asr-training/
 	pip install -q -e services/clip-extraction/
 	pip install -q -e services/pipeline/
+	pip install -q -e services/api/
 
 lint:
 	$(PYTHON) -m ruff check .
