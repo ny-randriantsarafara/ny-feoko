@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-import os
-
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -14,6 +11,8 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
+from infra.telemetry.logging import configure_logging
+
 _initialized = False
 
 
@@ -22,6 +21,7 @@ def init_telemetry(
     *,
     otlp_endpoint: str | None = None,
     console_export: bool = True,
+    log_level: str = "INFO",
 ) -> None:
     """Initialize OpenTelemetry with tracer and meter providers.
 
@@ -29,6 +29,7 @@ def init_telemetry(
         service_name: Name to identify this service in traces/metrics.
         otlp_endpoint: OTLP collector endpoint. If None, uses console export.
         console_export: If True, export to console (for development).
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
     """
     global _initialized
     if _initialized:
@@ -57,6 +58,9 @@ def init_telemetry(
 
     meter_provider = MeterProvider(resource=resource, metric_readers=readers)
     metrics.set_meter_provider(meter_provider)
+
+    # Configure structured logging with trace correlation
+    configure_logging(level=log_level)
 
     _initialized = True
 
