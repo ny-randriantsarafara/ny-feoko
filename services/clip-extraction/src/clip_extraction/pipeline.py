@@ -32,8 +32,9 @@ def run_pipeline(
     sample_rate: int = 16000,
     verbose: bool = False,
     run_label: str = "",
-) -> Path:
-    """Run the full clip extraction pipeline. Returns the output directory path."""
+    dry_run: bool = False,
+) -> Path | None:
+    """Run the full clip extraction pipeline. Returns the output directory path (None in dry-run)."""
     from datetime import datetime
 
     source = Path(input_file)
@@ -41,7 +42,7 @@ def run_pipeline(
     label = run_label or source.stem
     run_dir = f"{timestamp}_{label}"
     out = Path(output_dir) / run_dir
-    writer = ClipWriter(out, sample_rate)
+    writer = None if dry_run else ClipWriter(out, sample_rate)
 
     total_sec = probe_duration(input_file)
     total_clips = 0
@@ -132,12 +133,18 @@ def run_pipeline(
                     whisper_rejected=whisper_rejected,
                 )
 
-                writer.write_clip(clip_result)
+                if writer:
+                    writer.write_clip(clip_result)
 
-    writer.flush_metadata()
+    if writer:
+        writer.flush_metadata()
 
-    console.print(f"\n[bold green]Done![/] {total_accepted}/{total_clips} clips accepted")
-    console.print(f"Output: {out}")
+    if dry_run:
+        console.print(f"\n[bold yellow][DRY RUN][/] Would accept {total_accepted}/{total_clips} clips")
+        console.print(f"[bold yellow][DRY RUN][/] Would write to: {out}")
+    else:
+        console.print(f"\n[bold green]Done![/] {total_accepted}/{total_clips} clips accepted")
+        console.print(f"Output: {out}")
 
     print_extraction_summary(
         total_clips=total_clips,
@@ -148,7 +155,7 @@ def run_pipeline(
         whisper_rejected=whisper_rejected_count,
     )
 
-    return out
+    return None if dry_run else out
 
 
 def run_vad_only(
@@ -158,6 +165,7 @@ def run_vad_only(
     *,
     chunk_duration: int = 300,
     sample_rate: int = 16000,
+    dry_run: bool = False,
 ) -> list[dict]:
     """Run VAD only and return/save segment list as JSON."""
     import json
@@ -176,6 +184,11 @@ def run_vad_only(
                 "duration_sec": round(seg.duration, 3),
             })
 
-    Path(output_file).write_text(json.dumps(all_segments, indent=2))
-    console.print(f"[bold green]Found {len(all_segments)} segments → {output_file}")
+    total_duration = sum(s["duration_sec"] for s in all_segments)
+    if dry_run:
+        console.print(f"[bold yellow][DRY RUN][/] Found {len(all_segments)} segments ({total_duration:.1f}s total speech)")
+        console.print(f"[bold yellow][DRY RUN][/] Would write to: {output_file}")
+    else:
+        Path(output_file).write_text(json.dumps(all_segments, indent=2))
+        console.print(f"[bold green]Found {len(all_segments)} segments → {output_file}")
     return all_segments

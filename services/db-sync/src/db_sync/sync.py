@@ -25,7 +25,7 @@ CSV_TO_DB_COLUMNS: dict[str, str] = {
 }
 
 
-def sync_run(client: Client, run_dir: Path, label: str) -> None:
+def sync_run(client: Client, run_dir: Path, label: str, *, dry_run: bool = False) -> None:
     """Create a run, upload clips, and upsert metadata."""
     metadata_path = run_dir / "metadata.csv"
     clips_dir = run_dir / "clips"
@@ -34,6 +34,17 @@ def sync_run(client: Client, run_dir: Path, label: str) -> None:
         raise SyncError(f"metadata.csv not found in {run_dir}")
     if not clips_dir.is_dir():
         raise SyncError(f"clips/ directory not found in {run_dir}")
+
+    # Read metadata for validation and stats
+    df = pd.read_csv(metadata_path)
+    wav_files = sorted(clips_dir.glob("*.wav"))
+
+    if dry_run:
+        console.print(f"[bold yellow][DRY RUN][/] Validated run directory: {run_dir}")
+        console.print(f"[bold yellow][DRY RUN][/] Label: {label}")
+        console.print(f"[bold yellow][DRY RUN][/] Would upload {len(wav_files)} clips")
+        console.print(f"[bold yellow][DRY RUN][/] Would upsert {len(df)} metadata rows")
+        return
 
     run_id = _create_run(client, label, source=str(run_dir))
     console.print(f"[bold green]Run created:[/] {run_id} ({label})")

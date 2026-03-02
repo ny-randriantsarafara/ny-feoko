@@ -23,6 +23,7 @@ def run(
     device: str = typer.Option("mps", "--device", help="Torch device (mps, cuda, cpu)"),
     label: str = typer.Option("", "--label", "-l", help="Run label for output directory (e.g. 'whisper-small', 'hf-mg-v2')"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Load models and process audio, but skip writing output files"),
 ) -> None:
     """Run the full extraction pipeline: VAD → classify → transcribe → write clips."""
     from clip_extraction.infrastructure.vad import SileroVAD
@@ -53,6 +54,7 @@ def run(
         speech_threshold=speech_threshold,
         verbose=verbose,
         run_label=label,
+        dry_run=dry_run,
     )
 
 
@@ -62,6 +64,7 @@ def vad_only(
     output: Path = typer.Option("data/vad_segments.json", "--output", "-o", help="Output JSON file"),
     chunk_duration: int = typer.Option(300, "--chunk-duration"),
     vad_threshold: float = typer.Option(0.35, "--vad-threshold"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Load model and detect segments, but skip writing output file"),
 ) -> None:
     """Run VAD only — outputs detected speech segments as JSON."""
     from clip_extraction.infrastructure.vad import SileroVAD
@@ -73,6 +76,7 @@ def vad_only(
         output_file=str(output),
         vad=vad,
         chunk_duration=chunk_duration,
+        dry_run=dry_run,
     )
 
 

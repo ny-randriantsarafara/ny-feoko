@@ -74,12 +74,24 @@ def download(
     url: str = typer.Argument(..., help="YouTube video URL"),
     output_dir: Path = typer.Option("data/input", "--output", "-o", help="Output directory"),
     label: str = typer.Option("", "--label", "-l", help="Filename label (defaults to video title)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate URL and show what would be downloaded without actually downloading"),
 ) -> None:
     """Download YouTube audio and convert to 16kHz mono WAV."""
+    # Fetch title to validate URL and determine filename
+    console.print("[bold]Fetching video title...[/]")
+    title = _get_title(url)
+    resolved_label = label if label else _sanitize(title)
+    out_path = output_dir / f"{resolved_label}.wav"
+
+    console.print(f"[dim]Title: {title}[/]")
+    console.print(f"[dim]Output: {out_path}[/]")
+
+    if dry_run:
+        console.print(f"[bold yellow][DRY RUN][/] Would download → {out_path}")
+        return
+
     out_path = download_audio(url, output_dir, label)
-
     duration = probe_duration(str(out_path))
-
     console.print(f"[bold green]Done![/] {out_path} ({duration:.0f}s)")
 
 

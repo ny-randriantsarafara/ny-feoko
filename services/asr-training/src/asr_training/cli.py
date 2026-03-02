@@ -31,10 +31,13 @@ def train(
     push_to_hub: str | None = typer.Option(
         None, "--push-to-hub", help="HuggingFace repo ID to push the model to"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Load model and dataset, show config, but skip actual training"
+    ),
 ) -> None:
     """Fine-tune Whisper on an exported training dataset."""
     from asr_training.config import TrainingConfig
-    from asr_training.train import fine_tune
+    from asr_training.train import fine_tune, validate_for_dry_run
     from asr_training.train import push_to_hub as push_fn
 
     resolved_data = data_dir.resolve()
@@ -48,6 +51,15 @@ def train(
         batch_size=batch_size,
         learning_rate=lr,
     )
+
+    if dry_run:
+        validate_for_dry_run(
+            config=config,
+            data_dir=resolved_data,
+            output_dir=output_dir.resolve(),
+            device=resolved_device,
+        )
+        return
 
     model_dir = fine_tune(
         config=config,
@@ -75,9 +87,13 @@ def re_draft(
     device: str = typer.Option(
         "auto", "--device", help="Device: auto, mps, cuda, cpu"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Load model and fetch pending clips, skip transcription and DB updates"
+    ),
 ) -> None:
     """Re-transcribe pending clips using a fine-tuned model and update Supabase."""
-    from asr_training.redraft import redraft_pending
+    from asr_training.redraft import redraft_pending, validate_redraft_for_dry_run
     from db_sync.run_resolution import resolve_run_id
     from db_sync.supabase_client import get_client
 
@@ -88,6 +104,16 @@ def re_draft(
     client = get_client()
     run_id = resolve_run_id(client, run_id=run, label=label)
     resolved_device = detect_device(device)
+
+    if dry_run:
+        validate_redraft_for_dry_run(
+            client=client,
+            model_path=model,
+            source_dir=resolved_source,
+            run_id=run_id,
+            device=resolved_device,
+        )
+        return
 
     redraft_pending(
         client=client,

@@ -16,6 +16,7 @@ app = typer.Typer(help="Ambara DB sync — push extraction runs to Supabase and 
 def sync(
     dir: Path = typer.Option(..., "--dir", "-d", help="Path to extraction run directory"),
     label: str = typer.Option("", "--label", "-l", help="Run label (defaults to directory name)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate files and show what would be uploaded, without writing to Supabase"),
 ) -> None:
     """Upload clips and metadata from a local extraction run to Supabase."""
     from db_sync.supabase_client import get_client
@@ -27,7 +28,7 @@ def sync(
 
     resolved_label = label or resolved_dir.name
     client = get_client()
-    sync_run(client, resolved_dir, resolved_label)
+    sync_run(client, resolved_dir, resolved_label, dry_run=dry_run)
 
 
 @app.command("export")
@@ -61,6 +62,9 @@ def export_training_cmd(
     eval_split: float = typer.Option(
         0.1, "--eval-split", help="Fraction of clips reserved for evaluation (0.0-0.5)"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Validate clips and show export stats, without writing files"
+    ),
 ) -> None:
     """Export corrected clips as a HuggingFace-compatible training dataset."""
     from db_sync.export import export_training
@@ -81,6 +85,7 @@ def export_training_cmd(
         source_dir=resolved_source,
         output=output.resolve(),
         eval_split=eval_split,
+        dry_run=dry_run,
     )
 
 

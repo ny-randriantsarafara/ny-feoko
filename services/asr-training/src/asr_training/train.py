@@ -116,3 +116,33 @@ def push_to_hub(model_dir: Path, repo_id: str) -> None:
     model.push_to_hub(repo_id)
 
     console.print(f"[bold green]Pushed to https://huggingface.co/{repo_id}[/]")
+
+
+def validate_for_dry_run(
+    config: TrainingConfig,
+    data_dir: Path,
+    output_dir: Path,
+    device: str,
+) -> None:
+    """Load model and dataset for validation without training."""
+    console.print(f"[bold yellow][DRY RUN][/] Loading base model [bold]{config.base_model}[/]...")
+    processor = WhisperProcessor.from_pretrained(
+        config.base_model, language=config.language, task=config.task
+    )
+    model = WhisperForConditionalGeneration.from_pretrained(config.base_model)
+    param_count = sum(p.numel() for p in model.parameters()) / 1e6
+
+    console.print(f"[bold yellow][DRY RUN][/] Loading dataset from [bold]{data_dir}[/]...")
+    dataset = load_training_data(data_dir, processor, config)
+
+    use_fp16 = config.use_fp16(device)
+
+    console.print(f"[bold yellow][DRY RUN][/] Validation successful!")
+    console.print(f"  Model: {config.base_model} ({param_count:.1f}M params)")
+    console.print(f"  Device: {device} (fp16={use_fp16})")
+    console.print(f"  Train samples: {len(dataset['train'])}")
+    console.print(f"  Test samples: {len(dataset['test'])}")
+    console.print(f"  Epochs: {config.epochs}")
+    console.print(f"  Batch size: {config.batch_size}")
+    console.print(f"  Learning rate: {config.learning_rate}")
+    console.print(f"  Output: {output_dir}")

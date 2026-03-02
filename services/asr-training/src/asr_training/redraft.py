@@ -130,3 +130,35 @@ def _fetch_pending_clips(
         columns="id,file_name",
         filters={"run_id": run_id, "status": "pending"},
     )
+
+
+def validate_redraft_for_dry_run(
+    client: Client,
+    model_path: str,
+    source_dir: Path,
+    run_id: str,
+    device: str,
+    language: str = "mg",
+) -> None:
+    """Load model and fetch pending clips for validation without updating."""
+    console.print(f"[bold yellow][DRY RUN][/] Loading model from [bold]{model_path}[/]...")
+    _processor = WhisperProcessor.from_pretrained(model_path)  # noqa: F841 - validates model loading
+    model = WhisperForConditionalGeneration.from_pretrained(model_path)
+    param_count = sum(p.numel() for p in model.parameters()) / 1e6
+
+    pending_clips = _fetch_pending_clips(client, run_id)
+    total_pending = len(pending_clips)
+
+    missing = 0
+    for clip in pending_clips:
+        wav_path = source_dir / clip["file_name"]
+        if not wav_path.exists():
+            missing += 1
+
+    console.print("[bold yellow][DRY RUN][/] Validation successful!")
+    console.print(f"  Model: {model_path} ({param_count:.1f}M params)")
+    console.print(f"  Device: {device}")
+    console.print(f"  Pending clips: {total_pending}")
+    if missing > 0:
+        console.print(f"  [yellow]Missing files: {missing} (will be skipped)[/]")
+    console.print(f"  Would re-transcribe: {total_pending - missing} clips")

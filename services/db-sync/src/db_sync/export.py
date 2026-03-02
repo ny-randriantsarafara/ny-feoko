@@ -78,13 +78,14 @@ def export_training(
     eval_split: float,
     seed: int = 42,
     overwrite: bool = False,
-) -> Path:
+    dry_run: bool = False,
+) -> Path | None:
     """Export corrected clips as a HuggingFace audiofolder dataset.
 
     Creates a timestamped directory under `output` with train/ and test/
     subdirectories, each containing WAV files and a metadata.csv.
 
-    Returns the path to the created dataset directory.
+    Returns the path to the created dataset directory (None in dry-run mode).
     """
     resolved_run_id = resolve_run_id(client, run_id, label)
     resolved_label = resolve_label(client, resolved_run_id)
@@ -141,11 +142,6 @@ def export_training(
 
     timestamp = datetime.now(tz=UTC).strftime("%Y%m%d")
     dataset_dir = output / f"{timestamp}_{resolved_label}"
-    if dataset_dir.exists():
-        if overwrite:
-            shutil.rmtree(dataset_dir)
-        else:
-            raise SyncError(f"Output directory already exists: {dataset_dir}")
 
     rng = random.Random(seed)
     shuffled = list(rows)
@@ -154,6 +150,18 @@ def export_training(
     split_idx = max(1, int(len(shuffled) * (1 - eval_split)))
     train_rows = shuffled[:split_idx]
     test_rows = shuffled[split_idx:]
+
+    if dry_run:
+        console.print(f"[bold yellow][DRY RUN][/] Would export {len(rows)} clips")
+        console.print(f"[bold yellow][DRY RUN][/]   Train: {len(train_rows)}, Test: {len(test_rows)}")
+        console.print(f"[bold yellow][DRY RUN][/]   Output: {dataset_dir}")
+        return None
+
+    if dataset_dir.exists():
+        if overwrite:
+            shutil.rmtree(dataset_dir)
+        else:
+            raise SyncError(f"Output directory already exists: {dataset_dir}")
 
     _write_split(source_dir, dataset_dir / "train", train_rows)
     if test_rows:
