@@ -82,10 +82,7 @@ def _run_redraft(
 @router.post("", response_model=RedraftResponse)
 def redraft(body: RedraftRequest, request: Request) -> RedraftResponse:
     settings = request.app.state.settings
-    if body.device is not None:
-        device = body.device
-    else:
-        device = settings.device
+    device = body.device or settings.device
     client = get_client()
     job_id = create_job(
         client,

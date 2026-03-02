@@ -45,12 +45,12 @@ def _run_ingest(
 ) -> None:
     from pathlib import Path
 
-    from clip_extraction.pipeline import run_pipeline
-    from db_sync.supabase_client import get_client
-    from db_sync.sync import sync_run
     from yt_download.cli import download_audio
 
     from api.models_cache import get_models
+    from clip_extraction.pipeline import run_pipeline
+    from db_sync.supabase_client import get_client
+    from db_sync.sync import sync_run
 
     client = get_client()
     settings_input = Path(input_dir)
@@ -69,7 +69,12 @@ def _run_ingest(
             job_id,
             JobUpdate(progress=20, progress_message="Loading models..."),
         )
-        models = get_models(device, vad_threshold=vad_threshold, whisper_model=whisper_model, whisper_hf=whisper_hf)
+        models = get_models(
+            device,
+            vad_threshold=vad_threshold,
+            whisper_model=whisper_model,
+            whisper_hf=whisper_hf,
+        )
 
         update_job(
             client,
