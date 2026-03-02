@@ -26,21 +26,23 @@ The initial focus is on the Merina dialect (spoken in Antananarivo and the centr
 
 ## 2. System Architecture
 
-All services connect through Supabase as the central data store.
+The platform is organized into two main applications that share Supabase as the central data store.
 
 ```mermaid
 flowchart TB
-    subgraph Ingest["Ingest pipeline"]
+    subgraph Apps["Applications"]
         direction TB
-        YD[yt-download]
-        CE[clip-extraction]
-        DS1[db-sync]
-        YD --> CE
-        CE --> DS1
-    end
-
-    subgraph Orchestration["Pipeline orchestrator"]
-        PIPE[pipeline]
+        subgraph API["apps/api (Python)"]
+            CLI[CLI commands]
+            REST[REST API]
+            UC[Use Cases]
+            SVC[Services]
+        end
+        subgraph Web["apps/web (Next.js)"]
+            TE[Transcript Editor]
+            INGEST[Ingest UI]
+            TRAIN[Training UI]
+        end
     end
 
     subgraph Supabase["Supabase"]
@@ -48,46 +50,48 @@ flowchart TB
         STORAGE[(Storage: clips)]
     end
 
-    subgraph Labeling["Labeling"]
-        TE[transcript-editor]
-    end
-
-    subgraph Iterate["Iterate pipeline"]
-        direction TB
-        DS2[db-sync]
-        ASR[asr-training]
-        DS2 --> ASR
-    end
-
-    DS1 --> DB
-    DS1 --> STORAGE
+    CLI --> UC
+    REST --> UC
+    UC --> SVC
+    SVC --> DB
+    SVC --> STORAGE
     TE <--> DB
     TE <--> STORAGE
-    ASR --> DB
-
-    PIPE -->|ingest| Ingest
-    PIPE -->|iterate| Iterate
+    Web --> REST
 ```
 
 **Data flows:**
 
-- **Ingest**: `yt-download` -> `clip-extraction` -> `db-sync` -> Supabase (runs, clips, storage)
-- **Labeling**: `transcript-editor` reads from and writes to Supabase
-- **Iterate**: `db-sync` (export) -> `asr-training` (train + re-draft) -> Supabase (updated draft transcriptions)
+- **Ingest**: CLI or Web UI -> `ingest` use case -> download + extract + sync to Supabase
+- **Labeling**: Web editor reads clips and writes corrections to Supabase
+- **Training**: CLI or Web UI -> `export` + `train` + `redraft` use cases -> improved draft transcriptions
 
-The `pipeline` service orchestrates both ingest (download + extract + sync) and iterate (export + train + re-draft) workflows.
+The unified CLI (`./ambara`) provides commands for all workflows, while the REST API enables the web interface.
 
-## 3. Service Map
+## 3. Application Structure
 
-| Service | Language | Purpose | External Dependencies |
-|---------|----------|---------|----------------------|
-| shared | Python | Audio I/O utilities, shared models | ffmpeg |
-| yt-download | Python | YouTube audio download as WAV | yt-dlp, ffmpeg |
-| clip-extraction | Python | VAD + classify + transcribe -> clips | PyTorch, Transformers (Silero, AST, Whisper) |
-| db-sync | Python | Sync runs to Supabase, export data | Supabase |
-| asr-training | Python | Whisper fine-tuning, re-draft pending | PyTorch, Transformers, HuggingFace |
-| pipeline | Python | Orchestrate ingest and iterate workflows | All Python services |
-| transcript-editor | TypeScript | Web UI for correcting transcripts | Next.js, Supabase, WaveSurfer |
+| Application | Language | Purpose | Key Components |
+|-------------|----------|---------|----------------|
+| apps/api | Python | Backend services and CLI | Domain entities, use cases, ML services, Supabase repositories |
+| apps/web | TypeScript | Web UI for labeling and monitoring | Next.js, transcript editor, job progress tracking |
+
+### apps/api Layers
+
+| Layer | Path | Purpose |
+|-------|------|---------|
+| domain | `src/domain/` | Entities (Clip, Run, Job), ports (interfaces), exceptions |
+| application | `src/application/` | Use cases (ingest, export, redraft) and services (clip extraction, training) |
+| infrastructure | `src/infra/` | Supabase repositories, ML clients (VAD, classifier, Whisper), YouTube downloader |
+| ports | `src/ports/` | CLI (Typer) and REST API (FastAPI) entry points |
+
+### apps/web Structure
+
+| Path | Purpose |
+|------|---------|
+| `src/app/` | Next.js pages: runs list, clip editor, ingest, training |
+| `src/components/` | UI components: ClipEditor, ClipList, JobProgressCard |
+| `src/hooks/` | React hooks: useClipsData, useAudioUrls, useJobPolling |
+| `src/lib/` | Utilities: Supabase client, audio processing, formatting |
 
 ## 4. End-to-End Data Flow
 
@@ -97,14 +101,14 @@ The `pipeline` service orchestrates both ingest (download + extract + sync) and 
 ./ambara ingest <url-or-file> -l <label> [--device mps]
 ```
 
-1. **Download** (if URL): `yt-download` fetches audio from YouTube and converts to 16kHz mono WAV at `data/input/<label>.wav`.
-2. **Extract**: `clip-extraction` runs:
+1. **Download** (if URL): YouTube audio is fetched and converted to 16kHz mono WAV at `data/input/<label>.wav`.
+2. **Extract**: The clip extraction service runs:
    - Silero VAD — detects speech regions
    - Segment grouping — merges into 5–30 second clips
    - AST classifier — filters out singing/music
    - Whisper — generates draft Malagasy transcripts
 3. **Output**: timestamped run directory (e.g. `data/output/20260222_201500_<label>/`) with `clips/*.wav` and `metadata.csv`.
-4. **Sync**: `db-sync` creates a run in Supabase, uploads clips to Storage, and upserts metadata into the `clips` table.
+4. **Sync**: Creates a run in Supabase, uploads clips to Storage, and upserts metadata into the `clips` table.
 
 ### Label
 
@@ -117,12 +121,14 @@ The `pipeline` service orchestrates both ingest (download + extract + sync) and 
 ### Iterate
 
 ```bash
-./ambara iterate -l <label> [--device mps]
+./ambara export --run-id <uuid> [--run-id <uuid>]
+./ambara train -d <data-dir> [--device mps]
+./ambara redraft --run-id <uuid> --model <path> [--device mps]
 ```
 
-1. **Export**: `db-sync` exports corrected clips (status = `corrected`) as a HuggingFace audiofolder dataset to `data/training/<dataset>/` (train/test split).
-2. **Train**: `asr-training` fine-tunes Whisper small on the exported data, saves to `models/whisper-mg-v1/model/`.
-3. **Re-draft**: `asr-training` re-transcribes all pending clips with the fine-tuned model and updates `draft_transcription` in Supabase for those clips.
+1. **Export**: Exports corrected clips (status = `corrected`) as a HuggingFace audiofolder dataset to `data/output/<dataset>/` (train/test split).
+2. **Train**: Fine-tunes Whisper small on the exported data, saves to `models/whisper-mg-v1/model/`.
+3. **Re-draft**: Re-transcribes all pending clips with the fine-tuned model and updates `draft_transcription` in Supabase for those clips.
 4. Corrected clips are left unchanged; their transcriptions stay as the source of truth.
 
 Repeat **Label** and **Iterate**. Each iteration improves drafts for pending clips, reducing correction effort.
@@ -174,18 +180,19 @@ Only clips with `status = corrected` are exported for training.
 
 ## 7. Configuration
 
-### Root `.env` (Python services: db-sync, asr-training, pipeline)
+### Root `.env` (Python API)
 
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-### `services/transcript-editor/.env.local` (Next.js)
+### `apps/web/.env.local` (Next.js)
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+API_URL=http://localhost:8000
 ```
 
 ### Supabase setup
@@ -201,35 +208,18 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 All commands are invoked via `./ambara <command> [options]`.
 
-### Pipeline (composite)
+### Main Commands
 
 | Command | Description |
 |---------|-------------|
 | `ingest <url-or-file> -l <label>` | Download (if URL) + extract + sync to Supabase |
-| `iterate -l <label>` | Export corrected clips + train Whisper + re-draft pending |
-| `editor` | Start transcript correction UI (Next.js dev server) |
-
-### Individual steps
-
-| Command | Description |
-|---------|-------------|
-| `download <url> [-l <label>]` | Download YouTube audio as 16kHz mono WAV |
-| `extract -i <input> -o <output> [-l <label>]` | Run full clip extraction pipeline |
-| `vad-only --input <file> --output <file>` | Run VAD detection only (no classification/transcription) |
-| `sync --dir <run-dir>` | Sync extraction run to Supabase |
-| `export [--run <uuid> \| --label <label>] -o <file>` | Export corrected clips to CSV |
-| `export-training [-l <label> \| --run <uuid>] [-d <source-dir>]` | Export corrected clips as training dataset |
-| `train -d <data-dir> [-o <model-dir>]` | Fine-tune Whisper on exported data |
-| `re-draft --model <path> [-d <source-dir>] -l <label>` | Re-transcribe pending clips with fine-tuned model |
-
-### Database management
-
-| Command | Description |
-|---------|-------------|
-| `dump` | Dump all table data as SQL (backup before migrations) |
-| `delete-run [--label <label> \| --run <uuid>]` | Delete a run and all its data |
-| `reset` | Wipe all runs, clips, edits, and storage |
-| `cleanup` | Remove orphaned runs and storage objects |
+| `sync --dir <run-dir>` | Sync a local extraction run to Supabase |
+| `export --run-id <uuid>` | Export corrected clips as a training dataset |
+| `train -d <data-dir>` | Fine-tune Whisper on exported training data |
+| `redraft --run-id <uuid> --model <path>` | Re-transcribe pending clips |
+| `delete-run --run-id <uuid>` | Delete a run and all its data |
+| `api` | Start the REST API server |
+| `editor` | Start the web editor (Next.js dev server) |
 
 ### Setup
 
@@ -237,4 +227,3 @@ All commands are invoked via `./ambara <command> [options]`.
 |---------|-------------|
 | `setup` | Create venv and install all packages |
 | `install` | Install local packages (editable) |
-| `help` | Show usage (default when no command given) |

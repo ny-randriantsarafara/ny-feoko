@@ -15,10 +15,10 @@ If you already have the venv and just need to reinstall packages:
 make install
 ```
 
-For the transcript editor, install Node dependencies:
+For the web editor, install Node dependencies:
 
 ```bash
-cd services/transcript-editor && npm install
+cd apps/web && npm install
 ```
 
 ## Supabase setup (one-time)
@@ -46,29 +46,36 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-Create `services/transcript-editor/.env.local` (for Next.js editor):
+Create `apps/web/.env.local` (for Next.js editor):
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+API_URL=http://localhost:8000
 ```
 
 ## Quick workflow (recommended)
 
-Three commands for the full cycle:
+The main commands for the full cycle:
 
 ```bash
 # 1. Ingest: download + extract + sync — all in one
-./ambara ingest "https://youtube.com/watch?v=..." -l church-mass --device mps -v
+./ambara ingest "https://youtube.com/watch?v=..." -l church-mass --device mps
 
 # 2. Correct transcripts in the web editor
 ./ambara editor
 
-# 3. Iterate: export + train + re-draft — all in one
-./ambara iterate -l church-mass --device mps
+# 3. Export corrected clips as training data
+./ambara export --run-id <uuid>
+
+# 4. Train Whisper on the corrected clips
+./ambara train -d data/output/<dataset> --device mps
+
+# 5. Re-draft pending clips with the improved model
+./ambara redraft --run-id <uuid> --model models/whisper-mg-v1/model --device mps
 ```
 
-Then repeat steps 2-3. Each iteration produces better drafts, making corrections faster.
+Then repeat steps 2-5. Each iteration produces better drafts, making corrections faster.
 
 `ingest` accepts a YouTube URL (downloads automatically) or a local file path:
 
@@ -79,7 +86,7 @@ Then repeat steps 2-3. Each iteration produces better drafts, making corrections
 For Colab training with GPU, use `--push-to-hub` to save the model:
 
 ```bash
-./ambara iterate -l church-mass --device cuda --push-to-hub user/whisper-mg
+./ambara train -d data/output/<dataset> --device cuda --push-to-hub user/whisper-mg
 ```
 
 ## Full workflow (individual steps)
@@ -87,63 +94,45 @@ For Colab training with GPU, use `--push-to-hub` to save the model:
 If you need more control, you can run each step separately:
 
 ```bash
-# 1. Download audio from YouTube
-./ambara download "https://youtube.com/watch?v=..." -l church-mass-jan
+# 1. Ingest downloads, extracts, and syncs automatically
+./ambara ingest "https://youtube.com/watch?v=..." -l church-mass-jan --device mps
 
-# 2. Extract clean speech clips (+ metadata.csv)
-./ambara extract -i data/input/church-mass-jan.wav -o data/output/ --device mps -v -l jan-test
-
-# 3. Sync run to Supabase (creates run, uploads clips, upserts metadata)
-./ambara sync --dir data/output/20260222_201500_jan-test
-
-# 4. Open transcript editor and label clips
+# 2. Open transcript editor and label clips
 ./ambara editor
 # Opens http://localhost:3000
 
-# 5. Export corrected clips for training
-./ambara export --label 20260222_201500_jan-test -o metadata.corrected.csv
+# 3. Export corrected clips for training (by run ID)
+./ambara export --run-id <run-uuid>
+
+# 4. Train Whisper on the exported dataset
+./ambara train -d data/output/<dataset> --device mps
+
+# 5. Re-draft pending clips with the fine-tuned model
+./ambara redraft --run-id <run-uuid> --model models/whisper-mg-v1/model --device mps
 ```
 
-## YouTube downloader
+## Ingest pipeline details
 
-```bash
-# Download and convert to 16kHz mono WAV
-./ambara download "https://youtube.com/watch?v=..." -l church-mass
-
-# Without label (uses video title as filename)
-./ambara download "https://youtube.com/watch?v=..."
-```
-
-Output goes to `data/input/<label>.wav`.
-
-## Clip extraction pipeline
-
-### Quick start
-
-```bash
-# Fast VAD-only pass (no GPU models, just detects speech regions)
-./ambara vad-only --input test.wav --output data/vad_segments.json
-
-# Full pipeline (VAD → classify → transcribe → write clips)
-./ambara extract --input test.wav --output data/output/ --device mps -v
-```
-
-### What the full pipeline does
+The `ingest` command runs the full extraction pipeline:
 
 ```
-Input WAV (any format, any length)
-  │
-  ▼  Chunked reading (300s chunks via ffmpeg, ~19MB RAM each)
-  │
-  ▼  Silero VAD — detects where speech exists
-  │
-  ▼  Segment grouping — merges adjacent speech into 5-30s clips
-  │
-  ▼  AST classifier — separates speech from singing/music
-  │
-  ▼  Whisper small — generates draft Malagasy transcripts
-  │
-  ▼  Output: clips/*.wav + metadata.csv
+Input WAV (any format, any length) or YouTube URL
+  |
+  v  Download (if URL)
+  |
+  v  Chunked reading (300s chunks via ffmpeg, ~19MB RAM each)
+  |
+  v  Silero VAD — detects where speech exists
+  |
+  v  Segment grouping — merges adjacent speech into 5-30s clips
+  |
+  v  AST classifier — separates speech from singing/music
+  |
+  v  Whisper small — generates draft Malagasy transcripts
+  |
+  v  Output: clips/*.wav + metadata.csv
+  |
+  v  Sync to Supabase
 ```
 
 ### Output structure
@@ -165,90 +154,30 @@ data/output/
 
 Use `--label` / `-l` to name runs for easy comparison.
 
-### metadata.csv columns
+### Tuning thresholds
 
-| Column | Description |
-|--------|-------------|
-| `file_name` | Relative path to the clip WAV |
-| `source_file` | Original input file |
-| `start_sec` | Start time in the original file |
-| `end_sec` | End time in the original file |
-| `duration_sec` | Clip duration |
-| `speech_score` | Classifier confidence that this is speech (0-1) |
-| `music_score` | Classifier confidence that this is music/singing (0-1) |
-| `transcription` | Whisper's draft transcript (needs manual correction) |
-| `whisper_avg_logprob` | Whisper confidence (higher = more confident) |
-| `whisper_no_speech_prob` | Probability that the clip has no speech |
-| `whisper_rejected` | `True` if Whisper itself wasn't confident |
-| `corrected` | Legacy local-editor field (kept for compatibility) |
-| `status` | Legacy local-editor field (kept for compatibility) |
-
-## Using HuggingFace fine-tuned models
-
-Instead of stock Whisper, you can test any community fine-tuned model from HuggingFace:
+**Too many singing/music clips getting through?** Raise the speech threshold:
 
 ```bash
-./ambara extract --input test.wav --output data/output/ --device mps \
+./ambara ingest audio.wav -l test --device mps --speech-threshold 0.5
+```
+
+**Dropping valid quiet speech?** Lower VAD sensitivity:
+
+```bash
+./ambara ingest audio.wav -l test --device mps --vad-threshold 0.25
+```
+
+### Using HuggingFace fine-tuned models
+
+Instead of stock Whisper, use a fine-tuned model:
+
+```bash
+./ambara ingest audio.wav -l test --device mps \
     --whisper-hf "username/whisper-small-malagasy"
 ```
 
-The `--whisper-hf` flag takes a HuggingFace model ID and overrides `--whisper-model`. The model is downloaded and cached automatically on first use. No authentication needed for public models.
-
-## Tuning thresholds
-
-### Too many singing/music clips getting through?
-
-Raise the speech threshold:
-
-```bash
-./ambara extract --input test.wav --output data/output/ --device mps --speech-threshold 0.5
-```
-
-### Dropping valid quiet speech (prayers, soft-spoken segments)?
-
-Lower VAD sensitivity:
-
-```bash
-./ambara extract --input test.wav --output data/output/ --device mps --vad-threshold 0.25
-```
-
-### All available options
-
-```bash
-./ambara extract --help
-./ambara vad-only --help
-```
-
-## Supabase sync and export
-
-### Sync an extraction run
-
-```bash
-./ambara sync --dir data/output/20260222_201500_jan-test
-```
-
-What it does:
-
-1. Creates a `runs` row in Supabase
-2. Uploads `clips/*.wav` to Storage (`clips/<run_id>/clips/*.wav`)
-3. Upserts `metadata.csv` into `clips` table using `(run_id, file_name)` uniqueness
-4. Preserves existing corrections when re-syncing
-
-### Export corrected clips
-
-By run ID:
-
-```bash
-./ambara export --run <run-uuid> -o metadata.corrected.csv
-```
-
-By run label:
-
-```bash
-./ambara export --label 20260222_201500_jan-test -o metadata.corrected.csv
-```
-
-Exports only `status = corrected`.
+The `--whisper-hf` flag takes a HuggingFace model ID and overrides `--whisper-model`.
 
 ## Whisper fine-tuning
 
@@ -256,18 +185,18 @@ The training pipeline takes corrected clips from Supabase, fine-tunes Whisper, a
 
 ```
 Corrected clips in Supabase
-  │
-  ▼  export-training — copies WAVs + writes metadata.csv
-  │
-  ▼  data/training/<dataset>/  (HuggingFace audiofolder format)
-  │
-  ▼  train — fine-tunes Whisper small with Seq2SeqTrainer
-  │
-  ▼  models/whisper-mg-v1/model/  (saved model + processor)
-  │
-  ▼  re-draft — re-transcribes pending clips, updates Supabase
-  │
-  ▼  Editor — pending clips now have better drafts to correct
+  |
+  v  export — downloads WAVs + writes metadata
+  |
+  v  data/output/<dataset>/  (HuggingFace audiofolder format)
+  |
+  v  train — fine-tunes Whisper small with Seq2SeqTrainer
+  |
+  v  models/whisper-mg-v1/model/  (saved model + processor)
+  |
+  v  redraft — re-transcribes pending clips, updates Supabase
+  |
+  v  Editor — pending clips now have better drafts to correct
 ```
 
 ### Step 1: Export training data
@@ -275,19 +204,17 @@ Corrected clips in Supabase
 Export corrected clips as a HuggingFace-compatible dataset:
 
 ```bash
-./ambara export-training --label <run-label> -d data/output/<run-dir>
+./ambara export --run-id <run-uuid>
 ```
 
-This copies WAV files and writes `metadata.csv` (with `file_name` and `transcription` columns) into `data/training/<date>_<label>/`, split into `train/` and `test/` subdirectories.
+This downloads WAV files from Supabase Storage and writes `metadata.csv` (with `file_name` and `transcription` columns) into `data/output/<date>/`, split into `train/` and `test/` subdirectories.
 
 Options:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--label` / `-l` | — | Run label in Supabase |
-| `--run` | — | Run UUID (alternative to label) |
-| `--source-dir` / `-d` | — | Local directory with `clips/` |
-| `--output` / `-o` | `data/training` | Parent directory for the dataset |
+| `--run-id` | — | Run UUID(s) to export (can specify multiple) |
+| `--output` / `-o` | `data/output` | Parent directory for the dataset |
 | `--eval-split` | `0.1` | Fraction of clips for evaluation (0.0-0.5) |
 
 ### Step 2: Train
@@ -295,7 +222,7 @@ Options:
 Fine-tune Whisper on the exported dataset:
 
 ```bash
-./ambara train --data-dir data/training/<dataset> --device mps
+./ambara train -d data/output/<dataset> --device mps
 ```
 
 The model and processor are saved to `models/whisper-mg-v1/model/` by default.
@@ -318,8 +245,7 @@ Options:
 Use the fine-tuned model to re-transcribe pending clips:
 
 ```bash
-./ambara re-draft --model models/whisper-mg-v1/model \
-    -d data/output/<run-dir> --label <run-label>
+./ambara redraft --run-id <run-uuid> --model models/whisper-mg-v1/model --device mps
 ```
 
 This updates `draft_transcription` in Supabase for all clips with `status = 'pending'`. The corrected clips and their transcriptions are left untouched.
@@ -378,29 +304,7 @@ The notebook is fully automated — edit the config cell at the top, then **Runt
 After training on Colab, use the HuggingFace repo ID directly:
 
 ```bash
-./ambara iterate -l my-label --device mps
-```
-
-Or in extraction:
-
-```bash
 ./ambara ingest data/input/new-audio.wav -l new-session --device mps --whisper-hf user/whisper-mg
-```
-
-### Using your fine-tuned model in extraction
-
-The trained model works with the existing extraction pipeline:
-
-```bash
-./ambara extract --input new-audio.wav --output data/output/ --device mps \
-    --whisper-hf models/whisper-mg-v1/model
-```
-
-For a model hosted on HuggingFace Hub:
-
-```bash
-./ambara extract --input new-audio.wav --output data/output/ --device mps \
-    --whisper-hf your-username/whisper-small-malagasy
 ```
 
 ## Database management
@@ -410,47 +314,14 @@ For a model hosted on HuggingFace Hub:
 Remove a single run and all its clips, edit history, and storage files:
 
 ```bash
-# By label
-./ambara delete-run --label 20260222_201500_jan-test
-
 # By UUID
-./ambara delete-run --run <run-uuid>
+./ambara delete-run --run-id <run-uuid>
 
 # Skip confirmation
-./ambara delete-run --label 20260222_201500_jan-test --yes
+./ambara delete-run --run-id <run-uuid> --yes
 ```
 
 Shows clip count and corrected count before confirming.
-
-### Reset everything
-
-Wipe all runs, clips, edits, and storage objects. Irreversible:
-
-```bash
-./ambara reset
-```
-
-Prints totals (runs, clips, edits) and asks for confirmation. Pass `--yes` to skip:
-
-```bash
-./ambara reset --yes
-```
-
-### Clean up orphans
-
-Find and remove orphaned data:
-
-- **Empty runs**: runs with zero clips (e.g. sync was interrupted)
-- **Orphan storage**: storage prefixes with no matching run in the database
-
-```bash
-./ambara cleanup
-
-# Skip confirmation
-./ambara cleanup --yes
-```
-
-Prints what it found before asking to proceed.
 
 ## Transcript editor (Supabase)
 
@@ -495,23 +366,26 @@ Shortcuts are displayed based on your platform. On macOS, use the Command key (�
 ny-feoko/
 ├── ambara                          # CLI wrapper script
 ├── Makefile                        # setup, install, lint, test
-├── shared/                         # Shared models and audio utilities
-│   └── ny_feoko_shared/
-│       ├── audio_io.py             # ffmpeg chunked reader
-│       └── models.py               # AudioSegment, ClipCandidate, ClipResult
-├── services/
-│   ├── yt-download/                # YouTube audio downloader
-│   ├── clip-extraction/            # VAD + classifier + Whisper pipeline
-│   ├── db-sync/                    # Supabase sync/export service
-│   ├── transcript-editor/          # Next.js web UI for correcting transcripts
-│   ├── asr-training/               # Whisper fine-tuning pipeline
-│   └── mt-training/                # NLLB fine-tuning (placeholder)
+├── apps/
+│   ├── api/                        # Python backend (CLI + REST API)
+│   │   └── src/
+│   │       ├── domain/             # Entities, ports, exceptions
+│   │       ├── application/        # Use cases and services
+│   │       ├── infra/              # Supabase repos, ML clients
+│   │       └── ports/              # CLI and REST entry points
+│   └── web/                        # Next.js frontend
+│       └── src/
+│           ├── app/                # Pages: runs, editor, ingest, training
+│           ├── components/         # UI components
+│           ├── hooks/              # React hooks
+│           └── lib/                # Utilities
 ├── data/
 │   ├── input/                      # Downloaded WAV files
-│   ├── output/                     # Extraction runs (gitignored)
-│   └── training/                   # Exported training datasets (gitignored)
+│   └── output/                     # Extraction runs and training datasets (gitignored)
 ├── models/                         # Saved fine-tuned models (gitignored)
+├── notebooks/                      # Colab notebooks for GPU training
 └── docs/
+    ├── architecture.md             # System design overview
     ├── usage.md                    # You are here
     └── supabase/                   # SQL setup scripts
 ```
