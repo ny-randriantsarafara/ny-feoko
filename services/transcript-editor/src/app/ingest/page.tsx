@@ -6,16 +6,12 @@ import { useRouter } from "next/navigation";
 import JobProgressCard from "@/components/JobProgressCard";
 import { useJobPolling } from "@/hooks/useJobPolling";
 
-function safeJobId(data: unknown): string | null {
-  if (
-    data &&
-    typeof data === "object" &&
-    "job_id" in data &&
-    typeof (data as { job_id: unknown }).job_id === "string"
-  ) {
-    return (data as { job_id: string }).job_id;
-  }
-  return null;
+function safeStringField(data: unknown, key: string): string | null {
+  if (data === null || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  const value = record[key];
+  if (typeof value !== "string") return null;
+  return value;
 }
 
 export default function IngestPage() {
@@ -42,13 +38,10 @@ export default function IngestPage() {
       });
 
       const data: unknown = await response.json();
-      const id = safeJobId(data);
+      const id = safeStringField(data, "job_id");
 
       if (!response.ok) {
-        const err = data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string"
-          ? (data as { error: string }).error
-          : "Failed to start ingest";
-        setError(err);
+        setError(safeStringField(data, "error") ?? "Failed to start ingest");
         setSubmitting(false);
         return;
       }

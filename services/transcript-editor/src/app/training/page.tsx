@@ -8,18 +8,19 @@ interface ExportResult {
   readonly dataset_dir: string;
 }
 
+function safeStringField(data: unknown, key: string): string | null {
+  if (data === null || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  const value = record[key];
+  if (typeof value !== "string") return null;
+  return value;
+}
+
 function safeExportResult(data: unknown): ExportResult | null {
-  if (
-    data &&
-    typeof data === "object" &&
-    "run_id" in data &&
-    "dataset_dir" in data &&
-    typeof (data as { run_id: unknown }).run_id === "string" &&
-    typeof (data as { dataset_dir: unknown }).dataset_dir === "string"
-  ) {
-    return data as ExportResult;
-  }
-  return null;
+  const runId = safeStringField(data, "run_id");
+  const datasetDir = safeStringField(data, "dataset_dir");
+  if (!runId || !datasetDir) return null;
+  return { run_id: runId, dataset_dir: datasetDir };
 }
 
 export default function TrainingPage() {
@@ -45,14 +46,7 @@ export default function TrainingPage() {
       const exportResult = safeExportResult(data);
 
       if (!response.ok) {
-        const errMsg =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : "Export failed";
-        setError(errMsg);
+        setError(safeStringField(data, "error") ?? "Export failed");
         setSubmitting(false);
         return;
       }
