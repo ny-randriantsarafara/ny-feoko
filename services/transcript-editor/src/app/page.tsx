@@ -261,13 +261,16 @@ export default function RunListPage() {
       {/* Empty state */}
       {runs.length === 0 && (
         <div className="text-center p-10 text-[var(--text-secondary)] border border-[var(--border-color)] rounded-lg bg-[var(--bg-secondary)]">
-          <p className="m-0 mb-2">No runs found.</p>
-          <p className="text-sm text-[var(--text-muted)] m-0">
-            Sync your first extraction with:{" "}
-            <code className="bg-[#222] px-1.5 py-0.5 rounded text-[var(--text-secondary)]">
-              ./ambara sync --dir data/output/your-run
-            </code>
+          <p className="m-0 mb-2">No runs yet.</p>
+          <p className="text-sm text-[var(--text-muted)] m-0 mb-4">
+            Ingest your first audio to get started.
           </p>
+          <button
+            onClick={() => router.push("/ingest")}
+            className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-md border-none cursor-pointer hover:bg-blue-600 transition-colors"
+          >
+            Start Ingest
+          </button>
         </div>
       )}
 
