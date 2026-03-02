@@ -1,7 +1,7 @@
 PYTHON = .venv/bin/python
 PIP = .venv/bin/pip
 
-.PHONY: setup install colab-install lint test
+.PHONY: setup install lint test api editor
 
 setup:
 	python3 -m venv .venv
@@ -9,23 +9,19 @@ setup:
 	$(MAKE) install
 
 install:
-	$(PIP) install -e shared/
-	$(PIP) install -e services/yt-download/
-	$(PIP) install -e services/db-sync/
-	$(PIP) install -e services/asr-training/
-	$(PIP) install -e services/clip-extraction/
-	$(PIP) install -e services/pipeline/
+	$(PIP) install -e apps/api/
 
 colab-install:
-	pip install -q -e shared/
-	pip install -q -e services/yt-download/
-	pip install -q -e services/db-sync/
-	pip install -q -e services/asr-training/
-	pip install -q -e services/clip-extraction/
-	pip install -q -e services/pipeline/
+	pip install -q -e apps/api/
 
 lint:
-	$(PYTHON) -m ruff check .
+	$(PYTHON) -m ruff check apps/api/src apps/api/tests --ignore B008
 
 test:
-	$(PYTHON) -m pytest -v
+	PYTHONPATH=apps/api/src $(PYTHON) -m pytest apps/api/tests -v
+
+api:
+	PYTHONPATH=apps/api/src $(PYTHON) -m uvicorn ports.rest.app:create_app --factory --host 0.0.0.0 --port 8000
+
+editor:
+	cd apps/web && npx next dev

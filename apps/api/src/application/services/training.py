@@ -1,0 +1,303 @@
+"""Whisper fine-tuning and re-drafting service."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import soundfile as sf
+import torch
+from datasets import DatasetDict, load_dataset
+from rich.console import Console
+from transformers import (
+    Seq2SeqTrainer,
+    Seq2SeqTrainingArguments,
+    WhisperForConditionalGeneration,
+    WhisperProcessor,
+)
+
+console = Console()
+
+SAMPLE_RATE = 16_000
+DECODER_MAX_TOKENS = 448
+DECODER_MAX_TOKENS_WITH_MARGIN = 444
+
+
+@dataclass(frozen=True)
+class TrainingConfig:
+    base_model: str = "openai/whisper-small"
+    language: str = "mg"
+    task: str = "transcribe"
+    epochs: int = 10
+    batch_size: int = 4
+    gradient_accumulation_steps: int = 2
+    learning_rate: float = 1e-5
+    warmup_ratio: float = 0.1
+    weight_decay: float = 0.01
+    eval_steps: int = 50
+    save_steps: int = 100
+    logging_steps: int = 10
+    max_label_length: int = 448
+
+    @staticmethod
+    def use_fp16(device: str) -> bool:
+        return device.startswith("cuda")
+
+
+def fine_tune(
+    config: TrainingConfig,
+    data_dir: Path,
+    output_dir: Path,
+    device: str,
+) -> Path:
+    """Fine-tune a Whisper model and save it to output_dir. Returns model path."""
+    processor = WhisperProcessor.from_pretrained(
+        config.base_model, language=config.language, task=config.task
+    )
+    model = WhisperForConditionalGeneration.from_pretrained(config.base_model)
+    model.generation_config.language = config.language
+    model.generation_config.task = config.task
+    model.generation_config.forced_decoder_ids = None
+
+    dataset = _load_training_data(data_dir, processor, config)
+
+    collator = _WhisperDataCollator(processor=processor)
+    compute_metrics = _make_compute_metrics(processor)
+
+    use_fp16 = config.use_fp16(device)
+    training_args = Seq2SeqTrainingArguments(
+        output_dir=str(output_dir / "checkpoints"),
+        per_device_train_batch_size=config.batch_size,
+        per_device_eval_batch_size=config.batch_size,
+        gradient_accumulation_steps=config.gradient_accumulation_steps,
+        learning_rate=config.learning_rate,
+        warmup_ratio=config.warmup_ratio,
+        weight_decay=config.weight_decay,
+        num_train_epochs=config.epochs,
+        fp16=use_fp16,
+        eval_strategy="steps",
+        eval_steps=config.eval_steps,
+        save_strategy="steps",
+        save_steps=config.save_steps,
+        logging_steps=config.logging_steps,
+        save_total_limit=3,
+        load_best_model_at_end=True,
+        metric_for_best_model="wer",
+        greater_is_better=False,
+        predict_with_generate=True,
+        generation_max_length=config.max_label_length,
+        report_to="none",
+        use_cpu=device == "cpu",
+    )
+
+    trainer = Seq2SeqTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=dataset["train"],
+        eval_dataset=dataset["test"],
+        data_collator=collator,
+        compute_metrics=compute_metrics,
+        processing_class=processor.feature_extractor,
+    )
+
+    trainer.train()
+
+    model_dir = output_dir / "model"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    trainer.save_model(str(model_dir))
+    processor.save_pretrained(str(model_dir))
+
+    return model_dir
+
+
+def push_to_hub(model_dir: Path, repo_id: str) -> None:
+    """Push a saved model and processor to HuggingFace Hub."""
+    processor = WhisperProcessor.from_pretrained(str(model_dir))
+    model = WhisperForConditionalGeneration.from_pretrained(str(model_dir))
+    processor.push_to_hub(repo_id)
+    model.push_to_hub(repo_id)
+
+
+def redraft_pending(
+    model_path: str,
+    source_dir: Path,
+    pending_clips: list[dict[str, str]],
+    device: str,
+    language: str = "mg",
+) -> tuple[int, int]:
+    """Re-transcribe clips and return (updated_count, skipped_count).
+
+    Note: this function does NOT write to the database. It returns transcriptions
+    and the caller (use-case) handles persistence.
+    """
+    processor = WhisperProcessor.from_pretrained(model_path)
+    model = WhisperForConditionalGeneration.from_pretrained(model_path)
+    model.to(device).eval()
+
+    forced_decoder_ids = processor.get_decoder_prompt_ids(
+        language=language, task="transcribe"
+    )
+
+    updated = 0
+    skipped = 0
+    results: list[tuple[str, str]] = []
+
+    for clip in pending_clips:
+        file_name = clip["file_name"]
+        wav_path = source_dir / file_name
+
+        if not wav_path.exists():
+            skipped += 1
+            continue
+
+        text = _transcribe_clip(wav_path, processor, model, device, forced_decoder_ids)
+        results.append((clip["id"], text))
+        updated += 1
+
+    return updated, skipped
+
+
+def get_transcriptions(
+    model_path: str,
+    source_dir: Path,
+    pending_clips: list[dict[str, str]],
+    device: str,
+    language: str = "mg",
+) -> list[tuple[str, str]]:
+    """Transcribe clips and return list of (clip_id, text) pairs."""
+    processor = WhisperProcessor.from_pretrained(model_path)
+    model = WhisperForConditionalGeneration.from_pretrained(model_path)
+    model.to(device).eval()
+
+    forced_decoder_ids = processor.get_decoder_prompt_ids(
+        language=language, task="transcribe"
+    )
+
+    results: list[tuple[str, str]] = []
+    for clip in pending_clips:
+        wav_path = source_dir / clip["file_name"]
+        if not wav_path.exists():
+            continue
+        text = _transcribe_clip(wav_path, processor, model, device, forced_decoder_ids)
+        results.append((clip["id"], text))
+
+    return results
+
+
+def _transcribe_clip(
+    wav_path: Path,
+    processor: WhisperProcessor,
+    model: WhisperForConditionalGeneration,
+    device: str,
+    forced_decoder_ids: list[tuple[int, int]],
+) -> str:
+    audio, sr = sf.read(str(wav_path), dtype="float32")
+    if sr != SAMPLE_RATE:
+        raise RuntimeError(f"Expected {SAMPLE_RATE}Hz audio, got {sr}Hz in {wav_path}")
+
+    inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
+    input_features = inputs.input_features.to(device)
+
+    with torch.no_grad():
+        predicted_ids = model.generate(
+            input_features,
+            forced_decoder_ids=forced_decoder_ids,
+            max_new_tokens=DECODER_MAX_TOKENS_WITH_MARGIN,
+        )
+
+    return processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
+
+
+def _load_training_data(
+    data_dir: Path,
+    processor: WhisperProcessor,
+    config: TrainingConfig,
+) -> DatasetDict:
+    ds = load_dataset("audiofolder", data_dir=str(data_dir))
+
+    if not isinstance(ds, DatasetDict):
+        ds = DatasetDict({"train": ds})
+
+    if "test" not in ds:
+        split = ds["train"].train_test_split(test_size=0.1, seed=42)
+        ds = DatasetDict({"train": split["train"], "test": split["test"]})
+
+    tokenizer = processor.tokenizer
+    feature_extractor = processor.feature_extractor
+
+    def preprocess(batch: dict) -> dict:
+        audio_arrays = [sample["array"] for sample in batch["audio"]]
+        sampling_rates = [sample["sampling_rate"] for sample in batch["audio"]]
+
+        features = feature_extractor(
+            audio_arrays,
+            sampling_rate=sampling_rates[0],
+            return_tensors="np",
+        )
+
+        labels = tokenizer(
+            batch["transcription"],
+            max_length=config.max_label_length,
+            truncation=True,
+        )
+
+        return {
+            "input_features": features.input_features,
+            "labels": labels.input_ids,
+        }
+
+    ds = ds.map(
+        preprocess,
+        batched=True,
+        batch_size=32,
+        remove_columns=ds["train"].column_names,
+    )
+
+    return ds
+
+
+@dataclass
+class _WhisperDataCollator:
+    processor: WhisperProcessor
+
+    def __call__(self, features: list[dict]) -> dict[str, torch.Tensor]:
+        input_features = [{"input_features": f["input_features"]} for f in features]
+        batch = self.processor.feature_extractor.pad(
+            input_features, return_tensors="pt"
+        )
+
+        label_features = [{"input_ids": f["labels"]} for f in features]
+        labels_batch = self.processor.tokenizer.pad(
+            label_features, return_tensors="pt"
+        )
+
+        labels = labels_batch["input_ids"]
+        labels = labels.masked_fill(labels_batch.attention_mask.eq(0), -100)
+
+        batch["labels"] = labels
+        return batch
+
+
+def _make_compute_metrics(processor: WhisperProcessor):  # noqa: ANN202
+    import evaluate
+
+    wer_metric = evaluate.load("wer")
+
+    def compute_metrics(pred) -> dict[str, float]:  # noqa: ANN001
+        pred_ids = pred.predictions
+        label_ids = pred.label_ids
+        label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
+
+        decoded_preds = processor.tokenizer.batch_decode(
+            pred_ids, skip_special_tokens=True
+        )
+        decoded_labels = processor.tokenizer.batch_decode(
+            label_ids, skip_special_tokens=True
+        )
+
+        wer = wer_metric.compute(
+            predictions=decoded_preds, references=decoded_labels
+        )
+        return {"wer": wer}
+
+    return compute_metrics
