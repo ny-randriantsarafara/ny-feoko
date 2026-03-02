@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "clip-extraction"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "asr-training",
     "ny-feoko-shared",

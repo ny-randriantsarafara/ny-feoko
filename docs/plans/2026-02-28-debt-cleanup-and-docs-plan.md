@@ -6,7 +6,7 @@
 
 **Architecture:** Two-phase approach. Phase 1 sweeps services in dependency order (shared -> leaf services -> orchestrators -> frontend), applying critical fixes, structural refactors, and cross-service pattern improvements. Phase 2 writes layered documentation: architecture overview, per-service READMEs, and an updated root README.
 
-**Tech Stack:** Python 3.10+ (Typer, PyTorch, Supabase), TypeScript/Next.js 15/React 19, Tailwind CSS 4, Supabase (Postgres + Storage + Auth)
+**Tech Stack:** Python 3.11+ (Typer, PyTorch, Supabase), TypeScript/Next.js 15/React 19, Tailwind CSS 4, Supabase (Postgres + Storage + Auth)
 
 ---
 

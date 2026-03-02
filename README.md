@@ -55,7 +55,7 @@ Repeat `editor` + `iterate` — each round produces better drafts.
 
 ## Requirements
 
-- Python 3.14+
+- Python 3.11+
 - ffmpeg
 - Node.js 18+ (for the transcript editor)
 - ~6GB RAM for the full extraction pipeline
