@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
 
 
-class ClipStatus(str, Enum):
+class ClipStatus(StrEnum):
     PENDING = "pending"
     CORRECTED = "corrected"
     DISCARDED = "discarded"

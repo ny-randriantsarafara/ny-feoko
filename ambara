@@ -3,59 +3,35 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="$ROOT/.venv/bin/python"
+API_SRC="$ROOT/apps/api/src"
 
 case "${1:-help}" in
-  ingest)    shift; exec "$PYTHON" -m pipeline.cli ingest "$@" ;;
-  iterate)   shift; exec "$PYTHON" -m pipeline.cli iterate "$@" ;;
-  download)  shift; exec "$PYTHON" -m yt_download.cli download "$@" ;;
-  extract)   shift; exec "$PYTHON" -m clip_extraction.cli run "$@" ;;
-  vad-only)  shift; exec "$PYTHON" -m clip_extraction.cli vad-only "$@" ;;
-  sync)       shift; exec "$PYTHON" -m db_sync.cli sync "$@" ;;
-  export)     shift; exec "$PYTHON" -m db_sync.cli export "$@" ;;
-  dump)       shift; exec "$PYTHON" -m db_sync.cli dump "$@" ;;
-  delete-run) shift; exec "$PYTHON" -m db_sync.cli delete-run "$@" ;;
-  reset)      shift; exec "$PYTHON" -m db_sync.cli reset "$@" ;;
-  cleanup)          shift; exec "$PYTHON" -m db_sync.cli cleanup "$@" ;;
-  export-training)  shift; exec "$PYTHON" -m db_sync.cli export-training "$@" ;;
-  train)            shift; exec "$PYTHON" -m asr_training.cli train "$@" ;;
-  re-draft)         shift; exec "$PYTHON" -m asr_training.cli re-draft "$@" ;;
+  ingest)     shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app ingest "$@" ;;
+  sync)       shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app sync "$@" ;;
+  export)     shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app export "$@" ;;
+  redraft)    shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app redraft "$@" ;;
+  train)      shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app train "$@" ;;
+  delete-run) shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app delete-run "$@" ;;
+  api)        shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app api "$@" ;;
   editor)
     shift
     echo "Starting transcript editor at http://localhost:3000"
-    cd "$ROOT/services/transcript-editor"
+    cd "$ROOT/apps/web"
     exec npx next dev
-    ;;
-  api)
-    shift
-    echo "Starting API worker at http://localhost:8000"
-    cd "$ROOT"
-    exec "$ROOT/.venv/bin/uvicorn" api.app:create_app --factory --reload --port 8000 "$@"
     ;;
   setup)     python3 -m venv .venv && .venv/bin/pip install --upgrade pip && make install ;;
   install)   exec make install ;;
   *)         echo "Usage: ./ambara <command> [options]"
              echo ""
-             echo "Pipeline (recommended):"
-             echo "  ingest     Download + extract + sync — one command to go from audio to Supabase"
-             echo "  iterate    Export + train + re-draft — one command to improve the model"
-             echo "  editor     Open transcript correction UI"
-             echo "  api        Start the API worker for the transcript editor"
-             echo ""
-             echo "Individual steps:"
-             echo "  download        Download YouTube audio as 16kHz mono WAV"
-             echo "  extract         Run full clip extraction pipeline"
-             echo "  vad-only        Run VAD detection only"
+             echo "Commands:"
+             echo "  ingest          Download + extract + sync"
              echo "  sync            Sync extraction run to Supabase"
-             echo "  export          Export corrected clips to CSV"
-             echo "  export-training Export corrected clips as a training dataset"
+             echo "  export          Export corrected clips as a training dataset"
+             echo "  redraft         Re-transcribe pending clips"
              echo "  train           Fine-tune Whisper on exported training data"
-             echo "  re-draft        Re-transcribe pending clips with a fine-tuned model"
-             echo ""
-             echo "Database:"
-             echo "  dump            Dump all table data as SQL (backup before migrations)"
              echo "  delete-run      Delete a run and all its data from Supabase"
-             echo "  reset           Wipe all runs, clips, edits, and storage"
-             echo "  cleanup         Remove orphaned data"
+             echo "  api             Start the API worker"
+             echo "  editor          Start the web editor"
              echo ""
              echo "Setup:"
              echo "  setup           Create venv and install all packages"
@@ -63,9 +39,7 @@ case "${1:-help}" in
              echo ""
              echo "Examples:"
              echo "  ./ambara ingest 'https://youtube.com/watch?v=...' -l church-mass --device mps"
-             echo "  ./ambara ingest -i data/input/recording.wav -l session1 --device mps -v"
-             echo "  ./ambara editor"
-             echo "  ./ambara iterate -l session1 --device mps"
-             echo "  ./ambara iterate -l session1 --device cuda --push-to-hub user/whisper-mg"
+             echo "  ./ambara export --run-id <id> --run-id <id>"
+             echo "  ./ambara redraft --run-id <id> --model models/whisper-mg-v1/model"
              ;;
 esac

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import soundfile as sf
 
-from application.services.audio_processing import probe_duration, stream_chunks
+from application.services.audio_processing import stream_chunks
 from domain.entities.clip import AudioSegment, ClipCandidate, ClipResult
 from domain.ports.classifier import ClassifierPort
 from domain.ports.transcriber import TranscriberPort

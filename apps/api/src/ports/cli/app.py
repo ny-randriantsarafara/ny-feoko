@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -26,8 +25,8 @@ def ingest(
     from application.services.audio_processing import detect_device
     from application.services.clip_extraction import run_pipeline
     from application.use_cases.sync_run import SyncRun
-    from infra.clients.supabase import get_client
     from infra.clients.ml.model_cache import get_models
+    from infra.clients.supabase import get_client
     from infra.clients.youtube import YouTubeDownloader
     from infra.repositories.supabase_clip_repo import SupabaseClipRepository
     from infra.repositories.supabase_run_repo import SupabaseRunRepository
@@ -136,13 +135,11 @@ def redraft(
     from infra.clients.supabase import get_client
     from infra.repositories.supabase_clip_repo import SupabaseClipRepository
     from infra.repositories.supabase_run_repo import SupabaseRunRepository
-    from infra.repositories.supabase_storage import SupabaseAudioStorage
 
     resolved_device = detect_device(device)
     client = get_client()
     run_repo = SupabaseRunRepository(client)
     clip_repo = SupabaseClipRepository(client)
-    storage = SupabaseAudioStorage(client)
 
     total_updated = 0
     for run_id in run_ids:
@@ -203,7 +200,7 @@ def train(
     epochs: int = typer.Option(10, "--epochs"),
     batch_size: int = typer.Option(4, "--batch-size"),
     lr: float = typer.Option(1e-5, "--lr"),
-    push_to_hub: Optional[str] = typer.Option(None, "--push-to-hub"),
+    push_to_hub: str | None = typer.Option(None, "--push-to-hub"),
 ) -> None:
     """Fine-tune Whisper on an exported training dataset."""
     from application.services.audio_processing import detect_device

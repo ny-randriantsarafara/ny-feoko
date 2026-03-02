@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class JobType(str, Enum):
+class JobType(StrEnum):
     INGEST = "ingest"
     REDRAFT = "redraft"
     EXPORT = "export"
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     DONE = "done"

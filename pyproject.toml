@@ -11,7 +11,7 @@ dependencies = []
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["shared", "services/clip-extraction/src", "services/db-sync/src", "services/asr-training/src", "services/pipeline/src"]
+src = ["apps/api/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
@@ -22,8 +22,5 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = [
-    "services/clip-extraction/tests",
-    "services/asr-training/tests",
-    "services/db-sync/tests",
-    "services/pipeline/tests",
+    "apps/api/tests",
 ]

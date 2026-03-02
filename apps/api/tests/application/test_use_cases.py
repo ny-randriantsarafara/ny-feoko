@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
-from domain.entities.clip import ClipStatus
 from domain.entities.run import Run, RunType
-from domain.exceptions import RunNotFoundError, SyncError
+from domain.exceptions import SyncError
 
 
 def _make_run(

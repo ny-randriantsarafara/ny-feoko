@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from domain.entities.clip import ClipStatus
 from domain.entities.job import JobStatus, JobType
 from domain.entities.run import RunType
 from domain.exceptions import RunNotFoundError
