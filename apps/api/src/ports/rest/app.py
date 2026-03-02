@@ -24,6 +24,7 @@ from infra.repositories.supabase_storage import SupabaseAudioStorage
 from ports.rest.routes.export import router as export_router
 from ports.rest.routes.ingest import router as ingest_router
 from ports.rest.routes.jobs import router as jobs_router
+from ports.rest.routes.metrics import router as metrics_router
 from ports.rest.routes.redraft import router as redraft_router
 from ports.rest.routes.runs import router as runs_router
 
@@ -77,5 +78,6 @@ def create_app() -> FastAPI:
     app.include_router(redraft_router)
     app.include_router(jobs_router)
     app.include_router(runs_router)
+    app.include_router(metrics_router)
 
     return app
