@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatDuration } from "@/lib/format";
 import RunCard from "@/components/RunCard";
+import JobProgressCard from "@/components/JobProgressCard";
 import type { RunWithProgress } from "@/components/RunCard";
+import { useRecentJobs } from "@/hooks/useRecentJobs";
 
 type TypeFilter = "all" | "extraction" | "reading";
 
@@ -15,6 +17,10 @@ const TYPE_TABS: { value: TypeFilter; label: string }[] = [
   { value: "reading", label: "Reading" },
 ];
 
+function isJobActive(status: string): boolean {
+  return status === "queued" || status === "running";
+}
+
 export default function RunListPage() {
   const [runs, setRuns] = useState<RunWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +29,7 @@ export default function RunListPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
   const supabase = createClient();
+  const { jobs } = useRecentJobs();
 
   useEffect(() => {
     async function loadRuns() {
@@ -171,6 +178,21 @@ export default function RunListPage() {
             New Reading Session
           </button>
           <button
+            onClick={() => router.push("/ingest")}
+            className="px-3.5 py-1.5 bg-blue-700 text-white text-[13px] font-medium rounded-md
+              border-none cursor-pointer hover:bg-blue-600 transition-colors"
+          >
+            Ingest
+          </button>
+          <button
+            onClick={() => router.push("/training")}
+            className="px-3.5 py-1.5 bg-transparent text-[var(--text-secondary)] text-[13px]
+              border border-[var(--border-color)] rounded-md cursor-pointer
+              hover:border-gray-500 hover:text-[var(--text-primary)] transition-colors"
+          >
+            Training
+          </button>
+          <button
             onClick={handleLogout}
             className="px-3.5 py-1.5 bg-transparent text-[var(--text-secondary)] text-[13px]
               border border-[var(--border-color)] rounded-md cursor-pointer
@@ -187,6 +209,21 @@ export default function RunListPage() {
           {globalStats.doneClips} / {globalStats.totalClips} clips corrected
           {" \u00B7 "}
           {formatDuration(globalStats.totalDuration)} audio
+        </div>
+      )}
+
+      {/* Jobs section */}
+      {jobs.filter((j) => isJobActive(j.status)).length > 0 && (
+        <div className="mb-4 flex flex-col gap-3">
+          {jobs
+            .filter((j) => isJobActive(j.status))
+            .map((job) => (
+              <JobProgressCard
+                key={job.id}
+                job={job}
+                onViewRun={(runId) => router.push(`/runs/${runId}`)}
+              />
+            ))}
         </div>
       )}
 
