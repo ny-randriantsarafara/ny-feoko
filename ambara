@@ -25,6 +25,12 @@ case "${1:-help}" in
     cd "$ROOT/services/transcript-editor"
     exec npx next dev
     ;;
+  api)
+    shift
+    echo "Starting API worker at http://localhost:8000"
+    cd "$ROOT"
+    exec "$ROOT/.venv/bin/uvicorn" api.app:create_app --factory --reload --port 8000 "$@"
+    ;;
   setup)     python3 -m venv .venv && .venv/bin/pip install --upgrade pip && make install ;;
   install)   exec make install ;;
   *)         echo "Usage: ./ambara <command> [options]"
@@ -33,6 +39,7 @@ case "${1:-help}" in
              echo "  ingest     Download + extract + sync — one command to go from audio to Supabase"
              echo "  iterate    Export + train + re-draft — one command to improve the model"
              echo "  editor     Open transcript correction UI"
+             echo "  api        Start the API worker for the transcript editor"
              echo ""
              echo "Individual steps:"
              echo "  download        Download YouTube audio as 16kHz mono WAV"
