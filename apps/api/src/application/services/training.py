@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,11 +12,11 @@ import torch
 from datasets import DatasetDict, load_dataset
 from rich.console import Console
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
     TimeRemainingColumn,
 )
 from transformers import (
@@ -28,7 +27,8 @@ from transformers import (
     WhisperProcessor,
 )
 
-from infra.telemetry.gpu import get_gpu_memory_info, format_gpu_memory
+from infra.clients.ml.hf_auth import ensure_hf_auth
+from infra.telemetry.gpu import format_gpu_memory, get_gpu_memory_info
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -235,6 +235,7 @@ def fine_tune(
 def push_to_hub(model_dir: Path, repo_id: str) -> None:
     """Push a saved model and processor to HuggingFace Hub."""
     logger.info("Pushing model to HuggingFace Hub: %s -> %s", model_dir, repo_id)
+    ensure_hf_auth(required=True)
     processor = WhisperProcessor.from_pretrained(str(model_dir))
     model = WhisperForConditionalGeneration.from_pretrained(str(model_dir))
     logger.debug("Model and processor loaded from %s", model_dir)

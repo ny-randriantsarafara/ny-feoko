@@ -8,7 +8,6 @@ from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from application.use_cases.export_training import ExportTraining
-from application.use_cases.ingest_run import IngestRun
 from application.use_cases.list_runs import ListRuns
 from application.use_cases.manage_runs import Cleanup, DeleteRun
 from application.use_cases.redraft_clips import RedraftClips
@@ -16,11 +15,11 @@ from application.use_cases.sync_run import SyncRun
 from infra.clients.supabase import get_client
 from infra.clients.youtube import YouTubeDownloader
 from infra.config import Settings
-from infra.telemetry.setup import init_telemetry
 from infra.repositories.supabase_clip_repo import SupabaseClipRepository
 from infra.repositories.supabase_job_repo import SupabaseJobRepository
 from infra.repositories.supabase_run_repo import SupabaseRunRepository
 from infra.repositories.supabase_storage import SupabaseAudioStorage
+from infra.telemetry.setup import init_telemetry
 from ports.rest.routes.export import router as export_router
 from ports.rest.routes.ingest import router as ingest_router
 from ports.rest.routes.jobs import router as jobs_router
@@ -56,14 +55,7 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.executor = ThreadPoolExecutor(max_workers=1)
 
-    app.state.ingest = IngestRun(
-        downloader=YouTubeDownloader(),
-        vad=None,  # Lazily loaded via model cache in route handler
-        classifier=None,
-        transcriber=None,
-        sync=sync_use_case,
-        job_repo=job_repo,
-    )
+    app.state.ingest_downloader = YouTubeDownloader()
     app.state.export = ExportTraining(run_repo, clip_repo, storage)
     app.state.redraft = RedraftClips(run_repo, clip_repo, storage, job_repo)
     app.state.list_runs = ListRuns(run_repo)

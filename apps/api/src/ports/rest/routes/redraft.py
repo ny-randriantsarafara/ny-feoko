@@ -7,16 +7,11 @@ import logging
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from application.types import RedraftRequest
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/redraft", tags=["redraft"])
-
-
-class RedraftRequest(BaseModel):
-    run_ids: list[str]
-    model_path: str
-    device: str | None = None
-    language: str = "mg"
 
 
 class RedraftResponse(BaseModel):
@@ -37,7 +32,7 @@ def _run_redraft_job(
 @router.post("", response_model=RedraftResponse)
 def redraft(body: RedraftRequest, request: Request) -> RedraftResponse:
     settings = request.app.state.settings
-    device = body.device or settings.device
+    device = body.device if "device" in body.model_fields_set else settings.device
     job_repo = request.app.state.job_repo
 
     job_id = job_repo.create(

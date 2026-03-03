@@ -103,8 +103,9 @@ class TestRichProgressCallback:
         assert callback.progress is None  # Not started yet
 
     def test_callback_logs_gpu_at_interval(self) -> None:
-        from application.services.training import RichProgressCallback
         from unittest.mock import MagicMock, patch
+
+        from application.services.training import RichProgressCallback
 
         callback = RichProgressCallback(gpu_log_interval=2)
 

@@ -7,9 +7,9 @@ import logging
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 
-from infra.telemetry.setup import get_tracer, init_telemetry
-from infra.telemetry.metrics import ApiMetrics
 from infra.telemetry.logging import TraceContextFilter, configure_logging
+from infra.telemetry.metrics import ApiMetrics
+from infra.telemetry.setup import get_tracer, init_telemetry
 
 
 class TestTelemetrySetup:
@@ -89,8 +89,9 @@ class TestCliLogging:
         assert root.level == logging.DEBUG
 
     def test_configure_cli_logging_uses_rich_handler(self) -> None:
-        from infra.telemetry.logging import configure_cli_logging
         from rich.logging import RichHandler
+
+        from infra.telemetry.logging import configure_cli_logging
 
         configure_cli_logging(verbose=True)
         root = logging.getLogger()

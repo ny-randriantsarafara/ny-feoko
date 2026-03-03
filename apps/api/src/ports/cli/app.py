@@ -5,16 +5,99 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
+from typing import NoReturn
 
 import torch
 import typer
+from pydantic import ValidationError
 
+from application.types import ExportRequest, IngestRequest, RedraftRequest, TrainRequest
 from domain.exceptions import MissingConfigError, RunNotFoundError, SyncError
 from infra.telemetry.logging import configure_cli_logging
 
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Ambara -- Malagasy ASR data pipeline and training platform.")
+
+
+def _raise_request_validation_error(command_name: str, error: ValidationError) -> NoReturn:
+    first_error = error.errors()[0]
+    field = ".".join(str(part) for part in first_error.get("loc", [])) or "request"
+    message = str(first_error.get("msg", "invalid value"))
+    raise typer.BadParameter(f"Invalid {command_name} option `{field}`: {message}") from error
+
+
+def _build_ingest_request(
+    *,
+    input_path: str,
+    label: str,
+    whisper_model: str,
+    whisper_hf: str,
+    vad_threshold: float,
+    speech_threshold: float,
+) -> IngestRequest:
+    try:
+        return IngestRequest(
+            url=input_path,
+            label=label,
+            whisper_model=whisper_model,
+            whisper_hf=whisper_hf,
+            vad_threshold=vad_threshold,
+            speech_threshold=speech_threshold,
+        )
+    except ValidationError as error:
+        _raise_request_validation_error("ingest", error)
+
+
+def _build_train_request(
+    *,
+    data_dir: str,
+    output_dir: str,
+    device: str,
+    base_model: str,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    push_to_hub: str | None,
+) -> TrainRequest:
+    try:
+        return TrainRequest(
+            data_dir=data_dir,
+            output_dir=output_dir,
+            device=device,
+            base_model=base_model,
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=lr,
+            push_to_hub=push_to_hub,
+        )
+    except ValidationError as error:
+        _raise_request_validation_error("train", error)
+
+
+def _build_export_request(*, run_ids: list[str], output: str, eval_split: float) -> ExportRequest:
+    try:
+        return ExportRequest(run_ids=run_ids, output=output, eval_split=eval_split)
+    except ValidationError as error:
+        _raise_request_validation_error("export", error)
+
+
+def _build_redraft_request(
+    *,
+    run_ids: list[str],
+    model: str,
+    device: str,
+    language: str,
+) -> RedraftRequest:
+    try:
+        return RedraftRequest(
+            run_ids=run_ids,
+            model_path=model,
+            device=device,
+            language=language,
+        )
+    except ValidationError as error:
+        _raise_request_validation_error("redraft", error)
 
 
 def _purge_python_cache(api_root: Path) -> tuple[int, int]:
@@ -57,6 +140,15 @@ def ingest(
     speech_threshold: float = typer.Option(0.35, "--speech-threshold"),
 ) -> None:
     """Download (if URL) + extract clips + sync to database."""
+    request = _build_ingest_request(
+        input_path=input_path,
+        label=label,
+        whisper_model=whisper_model,
+        whisper_hf=whisper_hf,
+        vad_threshold=vad_threshold,
+        speech_threshold=speech_threshold,
+    )
+
     from application.services.audio_processing import detect_device
     from application.services.clip_extraction import run_pipeline
     from application.use_cases.sync_run import SyncRun
@@ -69,20 +161,20 @@ def ingest(
 
     resolved_device = detect_device(device)
 
-    is_url = input_path.startswith("http://") or input_path.startswith("https://")
+    is_url = request.url.startswith("http://") or request.url.startswith("https://")
     if is_url:
         downloader = YouTubeDownloader()
-        audio_path = downloader.download(input_path, Path("data/input"), label)
+        audio_path = downloader.download(request.url, Path("data/input"), request.label)
     else:
-        audio_path = Path(input_path)
+        audio_path = Path(request.url)
         if not audio_path.exists():
             raise typer.BadParameter(f"Input file not found: {audio_path}")
 
     models = get_models(
         resolved_device,
-        vad_threshold=vad_threshold,
-        whisper_model=whisper_model,
-        whisper_hf=whisper_hf,
+        vad_threshold=request.vad_threshold,
+        whisper_model=request.whisper_model,
+        whisper_hf=request.whisper_hf or "",
     )
 
     run_dir = run_pipeline(
@@ -91,8 +183,8 @@ def ingest(
         models.vad,
         models.classifier,
         models.transcriber,
-        speech_threshold=speech_threshold,
-        run_label=label,
+        speech_threshold=request.speech_threshold,
+        run_label=request.label,
     )
     if run_dir is None:
         typer.echo("No clips extracted.", err=True)
@@ -104,7 +196,7 @@ def ingest(
         SupabaseClipRepository(client),
         SupabaseAudioStorage(client),
     )
-    sync.execute(run_dir, label or run_dir.name)
+    sync.execute(run_dir, request.label or run_dir.name)
     typer.echo(f"Sync complete: {run_dir}")
 
 
@@ -140,6 +232,8 @@ def export_cmd(
     eval_split: float = typer.Option(0.1, "--eval-split"),
 ) -> None:
     """Export corrected clips as a HuggingFace training dataset."""
+    request = _build_export_request(run_ids=run_ids, output=str(output), eval_split=eval_split)
+
     from application.use_cases.export_training import ExportTraining
     from infra.clients.supabase import get_client
     from infra.repositories.supabase_clip_repo import SupabaseClipRepository
@@ -152,7 +246,11 @@ def export_cmd(
         SupabaseClipRepository(client),
         SupabaseAudioStorage(client),
     )
-    dataset_dir = use_case.execute(run_ids, output.resolve(), eval_split=eval_split)
+    dataset_dir = use_case.execute(
+        request.run_ids,
+        Path(request.output).resolve(),
+        eval_split=request.eval_split,
+    )
     typer.echo(f"Exported to {dataset_dir}")
 
 
@@ -164,6 +262,13 @@ def redraft(
     language: str = typer.Option("mg", "--language"),
 ) -> None:
     """Re-transcribe pending clips using a fine-tuned model."""
+    request = _build_redraft_request(
+        run_ids=run_ids,
+        model=model,
+        device=device,
+        language=language,
+    )
+
     from application.services.audio_processing import detect_device
     from application.services.training import get_transcriptions
     from domain.entities.clip import ClipStatus
@@ -171,13 +276,13 @@ def redraft(
     from infra.repositories.supabase_clip_repo import SupabaseClipRepository
     from infra.repositories.supabase_run_repo import SupabaseRunRepository
 
-    resolved_device = detect_device(device)
+    resolved_device = detect_device(request.device)
     client = get_client()
     run_repo = SupabaseRunRepository(client)
     clip_repo = SupabaseClipRepository(client)
 
     total_updated = 0
-    for run_id in run_ids:
+    for run_id in request.run_ids:
         label = run_repo.resolve_label(run_id)
         pending = clip_repo.find_by_run(run_id, status=ClipStatus.PENDING, columns="id,file_name")
         if not pending:
@@ -191,7 +296,13 @@ def redraft(
             if stored.exists() and (stored / "clips").is_dir():
                 source_dir = stored
 
-        transcriptions = get_transcriptions(model, source_dir, pending, resolved_device, language)
+        transcriptions = get_transcriptions(
+            request.model_path,
+            source_dir,
+            pending,
+            resolved_device,
+            request.language,
+        )
         for clip_id, text in transcriptions:
             clip_repo.update_transcription(clip_id, text)
             total_updated += 1
@@ -234,24 +345,40 @@ def train(
     push_to_hub: str | None = typer.Option(None, "--push-to-hub"),
 ) -> None:
     """Fine-tune Whisper on an exported training dataset."""
+    request = _build_train_request(
+        data_dir=str(data_dir),
+        output_dir=str(output_dir),
+        device=device,
+        base_model=base_model,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        push_to_hub=push_to_hub,
+    )
+
     from application.services.audio_processing import detect_device
     from application.services.training import TrainingConfig, fine_tune
     from application.services.training import push_to_hub as push_fn
 
-    resolved_device = detect_device(device)
+    resolved_device = detect_device(request.device)
     config = TrainingConfig(
-        base_model=base_model,
-        epochs=epochs,
-        batch_size=batch_size,
-        learning_rate=lr,
+        base_model=request.base_model,
+        epochs=request.epochs,
+        batch_size=request.batch_size,
+        learning_rate=request.lr,
     )
 
-    model_dir = fine_tune(config, data_dir.resolve(), output_dir.resolve(), resolved_device)
+    model_dir = fine_tune(
+        config,
+        Path(request.data_dir).resolve(),
+        Path(request.output_dir).resolve(),
+        resolved_device,
+    )
     typer.echo(f"Model saved to {model_dir}")
 
-    if push_to_hub:
-        push_fn(model_dir, push_to_hub)
-        typer.echo(f"Pushed to https://huggingface.co/{push_to_hub}")
+    if request.push_to_hub:
+        push_fn(model_dir, request.push_to_hub)
+        typer.echo(f"Pushed to https://huggingface.co/{request.push_to_hub}")
 
 
 @app.command()

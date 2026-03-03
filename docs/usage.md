@@ -44,7 +44,12 @@ Create root `.env` (for Python sync/export):
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+HF_TOKEN=your-huggingface-token
 ```
+
+`HF_TOKEN` is required on the backend/server side for any web/API job that needs
+HuggingFace authentication (for example: pulling private `whisper_hf` models during
+ingest, loading private `model_path` repos during redraft, or `push_to_hub` during train).
 
 Create `apps/web/.env.local` (for Next.js editor):
 
@@ -292,9 +297,12 @@ The notebook is fully automated — edit the config cell at the top, then **Runt
 2. Create a [HuggingFace write token](https://huggingface.co/settings/tokens) and set `HF_TOKEN` in the config cell
 3. Ingest your audio locally first (`./ambara ingest ...`) so clips are in Supabase
 
+For web/API-triggered jobs (not notebook CLI runs), set `HF_TOKEN` in the backend
+environment so the server can access private HuggingFace models and push-to-hub.
+
 **Typical Colab workflow:**
 
-1. Set `ITERATE_LABEL` to your run label and `ITERATE_PUSH_TO_HUB` to your HF repo
+1. Set `TRAIN_RUN_IDS` to your run UUIDs and `TRAIN_PUSH_TO_HUB` to your HF repo
 2. Runtime > Run All
 3. The notebook exports corrected clips, trains Whisper, and re-drafts pending clips
 4. Open the editor locally, correct the improved drafts, and repeat

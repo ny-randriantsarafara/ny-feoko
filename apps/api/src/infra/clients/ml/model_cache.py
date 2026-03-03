@@ -1,4 +1,4 @@
-"""Singleton cache for ML models -- loaded once, reused across jobs."""
+"""Process-local cache for ML models keyed by effective configuration."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ from domain.ports.vad import VADPort
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_instance: ModelCache | None = None
+CacheKey = tuple[str, float, str, str]
+_instances: dict[CacheKey, ModelCache] = {}
 
 
 @dataclass
@@ -30,41 +31,60 @@ def get_models(
     whisper_model: str = "small",
     whisper_hf: str = "",
 ) -> ModelCache:
-    global _instance  # noqa: PLW0603
-    if _instance is not None:
-        return _instance
+    cache_key = _cache_key(
+        device=device,
+        vad_threshold=vad_threshold,
+        whisper_model=whisper_model,
+        whisper_hf=whisper_hf,
+    )
+    cached = _instances.get(cache_key)
+    if cached is not None:
+        return cached
 
     with _lock:
-        if _instance is not None:
-            return _instance
+        cached = _instances.get(cache_key)
+        if cached is not None:
+            return cached
 
-        logger.info("Loading ML models (first request)...")
-        _instance = _load_models(
+        logger.info("Loading ML models for cache key %s...", cache_key)
+        models = _load_models(
             device,
             vad_threshold=vad_threshold,
             whisper_model=whisper_model,
             whisper_hf=whisper_hf,
         )
-        logger.info("ML models loaded and cached.")
-        return _instance
+        _instances[cache_key] = models
+        logger.info("ML models loaded and cached for key %s.", cache_key)
+        return models
 
 
 def clear_models() -> bool:
-    """Clear cached ML models in the current process.
+    """Clear all cached ML models in the current process.
 
-    Returns True when a cached instance existed and was cleared.
+    Returns True when at least one cached entry existed and was cleared.
     """
-    global _instance  # noqa: PLW0603
     with _lock:
-        had_instance = _instance is not None
-        _instance = None
+        had_instances = bool(_instances)
+        _instances.clear()
 
-    if had_instance:
+    if had_instances:
         logger.info("ML model cache cleared.")
     else:
         logger.info("ML model cache already empty.")
 
-    return had_instance
+    return had_instances
+
+
+def _cache_key(
+    *,
+    device: str,
+    vad_threshold: float,
+    whisper_model: str,
+    whisper_hf: str,
+) -> CacheKey:
+    if whisper_hf:
+        whisper_model = ""
+    return (device, vad_threshold, whisper_model, whisper_hf)
 
 
 def _load_models(
@@ -81,8 +101,10 @@ def _load_models(
     classifier = ASTClassifier(device=device)
 
     if whisper_hf:
+        from infra.clients.ml.hf_auth import ensure_hf_auth
         from infra.clients.ml.hf_transcriber import HuggingFaceTranscriber
 
+        ensure_hf_auth(required=False)
         transcriber = HuggingFaceTranscriber(model_id=whisper_hf, device=device)
     else:
         from infra.clients.ml.transcriber import WhisperTranscriber

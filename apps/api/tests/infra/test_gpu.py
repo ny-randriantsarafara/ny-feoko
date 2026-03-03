@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from infra.telemetry.gpu import get_gpu_memory_info, format_gpu_memory
+from infra.telemetry.gpu import format_gpu_memory, get_gpu_memory_info
 
 
 class TestGpuMemory:
