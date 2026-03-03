@@ -15,6 +15,7 @@ from rich.console import Console
 from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
+    TrainerCallback,
     WhisperForConditionalGeneration,
     WhisperProcessor,
 )
@@ -46,6 +47,33 @@ class TrainingConfig:
     @staticmethod
     def use_fp16(device: str) -> bool:
         return device.startswith("cuda")
+
+
+class LoggingCallback(TrainerCallback):
+    """Emit structured logs during training for observability."""
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        logger.info(
+            "Training started: %d epochs, %d total steps",
+            args.num_train_epochs,
+            state.max_steps,
+        )
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs:
+            logger.debug("Step %d: %s", state.global_step, logs)
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics:
+            wer = metrics.get("eval_wer", 0)
+            logger.info("Eval at step %d: WER=%.4f", state.global_step, wer)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        logger.info(
+            "Training complete: %d steps, best WER=%.4f",
+            state.global_step,
+            state.best_metric or 0,
+        )
 
 
 def fine_tune(
