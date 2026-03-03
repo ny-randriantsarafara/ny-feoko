@@ -247,9 +247,18 @@ def get_transcriptions(
     language: str = "mg",
 ) -> list[tuple[str, str]]:
     """Transcribe clips and return list of (clip_id, text) pairs."""
+    logger.info(
+        "Transcription started: %d clips, model=%s, device=%s",
+        len(pending_clips),
+        model_path,
+        device,
+    )
+    start_time = time.perf_counter()
+
     processor = WhisperProcessor.from_pretrained(model_path)
     model = WhisperForConditionalGeneration.from_pretrained(model_path)
     model.to(device).eval()
+    logger.debug("Model loaded and moved to %s", device)
 
     forced_decoder_ids = processor.get_decoder_prompt_ids(
         language=language, task="transcribe"
@@ -259,10 +268,18 @@ def get_transcriptions(
     for clip in pending_clips:
         wav_path = source_dir / clip["file_name"]
         if not wav_path.exists():
+            logger.debug("Skipped missing file: %s", wav_path)
             continue
         text = _transcribe_clip(wav_path, processor, model, device, forced_decoder_ids)
+        logger.debug("Transcribed clip %s: %d chars", clip["file_name"], len(text))
         results.append((clip["id"], text))
 
+    elapsed = time.perf_counter() - start_time
+    logger.info(
+        "Transcription complete in %.2fs: %d clips processed",
+        elapsed,
+        len(results),
+    )
     return results
 
 
