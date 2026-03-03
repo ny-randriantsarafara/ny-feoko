@@ -194,9 +194,18 @@ def redraft_pending(
     Note: this function does NOT write to the database. It returns transcriptions
     and the caller (use-case) handles persistence.
     """
+    logger.info(
+        "Redraft started: %d clips, model=%s, device=%s",
+        len(pending_clips),
+        model_path,
+        device,
+    )
+    start_time = time.perf_counter()
+
     processor = WhisperProcessor.from_pretrained(model_path)
     model = WhisperForConditionalGeneration.from_pretrained(model_path)
     model.to(device).eval()
+    logger.debug("Model loaded and moved to %s", device)
 
     forced_decoder_ids = processor.get_decoder_prompt_ids(
         language=language, task="transcribe"
@@ -211,13 +220,22 @@ def redraft_pending(
         wav_path = source_dir / file_name
 
         if not wav_path.exists():
+            logger.debug("Skipped missing file: %s", wav_path)
             skipped += 1
             continue
 
         text = _transcribe_clip(wav_path, processor, model, device, forced_decoder_ids)
         results.append((clip["id"], text))
         updated += 1
+        logger.debug("Processed clip %s: %d chars", file_name, len(text))
 
+    elapsed = time.perf_counter() - start_time
+    logger.info(
+        "Redraft complete in %.2fs: %d updated, %d skipped",
+        elapsed,
+        updated,
+        skipped,
+    )
     return updated, skipped
 
 
