@@ -12,6 +12,14 @@ import soundfile as sf
 import torch
 from datasets import DatasetDict, load_dataset
 from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+    TimeRemainingColumn,
+)
 from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
@@ -19,6 +27,8 @@ from transformers import (
     WhisperForConditionalGeneration,
     WhisperProcessor,
 )
+
+from infra.telemetry.gpu import get_gpu_memory_info, format_gpu_memory
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -49,31 +59,82 @@ class TrainingConfig:
         return device.startswith("cuda")
 
 
-class LoggingCallback(TrainerCallback):
-    """Emit structured logs during training for observability."""
+class RichProgressCallback(TrainerCallback):
+    """Training callback with Rich progress bar and GPU monitoring."""
+
+    def __init__(self, gpu_log_interval: int = 50):
+        self.gpu_log_interval = gpu_log_interval
+        self.progress: Progress | None = None
+        self.task_id = None
+        self.last_loss = 0.0
+        self.last_wer = 0.0
 
     def on_train_begin(self, args, state, control, **kwargs):
+        gpu_info = get_gpu_memory_info()
+        logger.info(format_gpu_memory(gpu_info))
         logger.info(
             "Training started: %d epochs, %d total steps",
             args.num_train_epochs,
             state.max_steps,
         )
 
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]Training"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TextColumn("loss={task.fields[loss]:.3f}"),
+            TextColumn("wer={task.fields[wer]:.2f}"),
+            TextColumn("VRAM={task.fields[vram]}"),
+            TimeRemainingColumn(),
+            console=console,
+        )
+        self.progress.start()
+        self.task_id = self.progress.add_task(
+            "train",
+            total=state.max_steps,
+            loss=0.0,
+            wer=0.0,
+            vram="--",
+        )
+
     def on_log(self, args, state, control, logs=None, **kwargs):
         if logs:
+            self.last_loss = logs.get("loss", self.last_loss)
             logger.debug("Step %d: %s", state.global_step, logs)
+
+        # Update progress bar
+        if self.progress and self.task_id is not None:
+            vram_str = "--"
+            if state.global_step % self.gpu_log_interval == 0:
+                gpu_info = get_gpu_memory_info()
+                if gpu_info.get("available"):
+                    vram_str = f"{gpu_info['used_gb']:.1f}GB"
+                    logger.debug(format_gpu_memory(gpu_info))
+
+            self.progress.update(
+                self.task_id,
+                completed=state.global_step,
+                loss=self.last_loss,
+                wer=self.last_wer,
+                vram=vram_str,
+            )
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
         if metrics:
-            wer = metrics.get("eval_wer", 0)
-            logger.info("Eval at step %d: WER=%.4f", state.global_step, wer)
+            self.last_wer = metrics.get("eval_wer", 0)
+            logger.info("Eval at step %d: WER=%.4f", state.global_step, self.last_wer)
 
     def on_train_end(self, args, state, control, **kwargs):
+        if self.progress:
+            self.progress.stop()
         logger.info(
             "Training complete: %d steps, best WER=%.4f",
             state.global_step,
             state.best_metric or 0,
         )
+        gpu_info = get_gpu_memory_info()
+        logger.info("Final %s", format_gpu_memory(gpu_info))
 
 
 def fine_tune(
@@ -154,7 +215,7 @@ def fine_tune(
         data_collator=collator,
         compute_metrics=compute_metrics,
         processing_class=processor.feature_extractor,
-        callbacks=[LoggingCallback()],
+        callbacks=[RichProgressCallback(gpu_log_interval=50)],
     )
 
     trainer.train()
@@ -207,9 +268,7 @@ def redraft_pending(
     model.to(device).eval()
     logger.debug("Model loaded and moved to %s", device)
 
-    forced_decoder_ids = processor.get_decoder_prompt_ids(
-        language=language, task="transcribe"
-    )
+    forced_decoder_ids = processor.get_decoder_prompt_ids(language=language, task="transcribe")
 
     updated = 0
     skipped = 0
@@ -260,9 +319,7 @@ def get_transcriptions(
     model.to(device).eval()
     logger.debug("Model loaded and moved to %s", device)
 
-    forced_decoder_ids = processor.get_decoder_prompt_ids(
-        language=language, task="transcribe"
-    )
+    forced_decoder_ids = processor.get_decoder_prompt_ids(language=language, task="transcribe")
 
     results: list[tuple[str, str]] = []
     for clip in pending_clips:
@@ -380,14 +437,10 @@ class _WhisperDataCollator:
 
     def __call__(self, features: list[dict]) -> dict[str, torch.Tensor]:
         input_features = [{"input_features": f["input_features"]} for f in features]
-        batch = self.processor.feature_extractor.pad(
-            input_features, return_tensors="pt"
-        )
+        batch = self.processor.feature_extractor.pad(input_features, return_tensors="pt")
 
         label_features = [{"input_ids": f["labels"]} for f in features]
-        labels_batch = self.processor.tokenizer.pad(
-            label_features, return_tensors="pt"
-        )
+        labels_batch = self.processor.tokenizer.pad(label_features, return_tensors="pt")
 
         labels = labels_batch["input_ids"]
         labels = labels.masked_fill(labels_batch.attention_mask.eq(0), -100)
@@ -406,16 +459,10 @@ def _make_compute_metrics(processor: WhisperProcessor):  # noqa: ANN202
         label_ids = pred.label_ids
         label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
 
-        decoded_preds = processor.tokenizer.batch_decode(
-            pred_ids, skip_special_tokens=True
-        )
-        decoded_labels = processor.tokenizer.batch_decode(
-            label_ids, skip_special_tokens=True
-        )
+        decoded_preds = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+        decoded_labels = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-        wer = wer_metric.compute(
-            predictions=decoded_preds, references=decoded_labels
-        )
+        wer = wer_metric.compute(predictions=decoded_preds, references=decoded_labels)
         return {"wer": wer}
 
     return compute_metrics

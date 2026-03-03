@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
+import torch
 import typer
 
 from domain.exceptions import MissingConfigError, RunNotFoundError, SyncError
 from infra.telemetry.logging import configure_cli_logging
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Ambara -- Malagasy ASR data pipeline and training platform.")
 
@@ -247,8 +251,17 @@ def api(
 def main() -> None:
     try:
         app()
+    except torch.cuda.OutOfMemoryError as e:
+        logger.error("CUDA out of memory: %s", e)
+        logger.error(
+            "Suggestion: Reduce --batch-size to 1 or 2, especially for whisper-medium/large"
+        )
+        raise typer.Exit(1) from e
     except (RunNotFoundError, MissingConfigError, SyncError) as e:
-        typer.echo(f"Error: {e}", err=True)
+        logger.error("Error: %s", e)
+        raise typer.Exit(1) from e
+    except Exception as e:
+        logger.exception("Unexpected error: %s", e)
         raise typer.Exit(1) from e
 
 

@@ -28,9 +28,7 @@ class TestGroupSegments:
     def test_short_segment_rejected(self) -> None:
         segments = [AudioSegment(start_sec=0.0, end_sec=2.0)]
         audio = np.zeros(16000 * 2, dtype=np.float32)
-        result = group_segments(
-            segments, audio, 16000, Path("test.wav"), min_duration=5.0
-        )
+        result = group_segments(segments, audio, 16000, Path("test.wav"), min_duration=5.0)
         assert len(result) == 0
 
     def test_adjacent_segments_merged(self) -> None:
@@ -39,9 +37,7 @@ class TestGroupSegments:
             AudioSegment(start_sec=3.5, end_sec=7.0),
         ]
         audio = np.zeros(16000 * 7, dtype=np.float32)
-        result = group_segments(
-            segments, audio, 16000, Path("test.wav"), max_gap=1.5
-        )
+        result = group_segments(segments, audio, 16000, Path("test.wav"), max_gap=1.5)
         assert len(result) == 1
         assert result[0].start_sec == 0.0
         assert result[0].end_sec == 7.0
@@ -52,17 +48,13 @@ class TestGroupSegments:
             AudioSegment(start_sec=10.0, end_sec=16.0),
         ]
         audio = np.zeros(16000 * 16, dtype=np.float32)
-        result = group_segments(
-            segments, audio, 16000, Path("test.wav"), max_gap=1.5
-        )
+        result = group_segments(segments, audio, 16000, Path("test.wav"), max_gap=1.5)
         assert len(result) == 2
 
     def test_audio_start_offset(self) -> None:
         segments = [AudioSegment(start_sec=100.0, end_sec=110.0)]
         audio = np.zeros(16000 * 10, dtype=np.float32)
-        result = group_segments(
-            segments, audio, 16000, Path("test.wav"), audio_start_sec=100.0
-        )
+        result = group_segments(segments, audio, 16000, Path("test.wav"), audio_start_sec=100.0)
         assert len(result) == 1
         assert len(result[0].audio) > 0
 
@@ -100,3 +92,37 @@ class TestDetectDevice:
             patch("torch.backends.mps.is_available", return_value=False),
         ):
             assert detect_device("auto") == "cpu"
+
+
+class TestRichProgressCallback:
+    def test_callback_creates_progress_bar(self) -> None:
+        from application.services.training import RichProgressCallback
+
+        callback = RichProgressCallback(gpu_log_interval=50)
+        assert callback.gpu_log_interval == 50
+        assert callback.progress is None  # Not started yet
+
+    def test_callback_logs_gpu_at_interval(self) -> None:
+        from application.services.training import RichProgressCallback
+        from unittest.mock import MagicMock, patch
+
+        callback = RichProgressCallback(gpu_log_interval=2)
+
+        # Mock state
+        state = MagicMock()
+        state.global_step = 2
+        state.max_steps = 10
+
+        args = MagicMock()
+        args.num_train_epochs = 1
+
+        with patch("application.services.training.get_gpu_memory_info") as mock_gpu:
+            mock_gpu.return_value = {
+                "available": True,
+                "name": "T4",
+                "used_gb": 5.0,
+                "total_gb": 15.0,
+                "percent": 33,
+            }
+            # Should log at step 2 (interval=2)
+            callback.on_log(args, state, None, logs={"loss": 0.5})
