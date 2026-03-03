@@ -83,6 +83,15 @@ def fine_tune(
     device: str,
 ) -> Path:
     """Fine-tune a Whisper model and save it to output_dir. Returns model path."""
+    logger.info(
+        "Fine-tuning started: model=%s, epochs=%d, batch_size=%d, device=%s",
+        config.base_model,
+        config.epochs,
+        config.batch_size,
+        device,
+    )
+    start_time = time.perf_counter()
+
     processor = WhisperProcessor.from_pretrained(
         config.base_model, language=config.language, task=config.task
     )
@@ -91,7 +100,20 @@ def fine_tune(
     model.generation_config.task = config.task
     model.generation_config.forced_decoder_ids = None
 
+    logger.debug("Model and processor loaded from %s", config.base_model)
+    if device.startswith("cuda") and torch.cuda.is_available():
+        logger.debug(
+            "GPU memory allocated: %.2f MB",
+            torch.cuda.memory_allocated() / 1024 / 1024,
+        )
+
     dataset = _load_training_data(data_dir, processor, config)
+
+    logger.debug(
+        "Dataset loaded: train=%d samples, test=%d samples",
+        len(dataset["train"]),
+        len(dataset["test"]),
+    )
 
     collator = _WhisperDataCollator(processor=processor)
     compute_metrics = _make_compute_metrics(processor)
@@ -122,6 +144,8 @@ def fine_tune(
         use_cpu=device == "cpu",
     )
 
+    logger.debug("Training config: fp16=%s, use_cpu=%s", use_fp16, device == "cpu")
+
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
@@ -130,6 +154,7 @@ def fine_tune(
         data_collator=collator,
         compute_metrics=compute_metrics,
         processing_class=processor.feature_extractor,
+        callbacks=[LoggingCallback()],
     )
 
     trainer.train()
@@ -138,6 +163,10 @@ def fine_tune(
     model_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(str(model_dir))
     processor.save_pretrained(str(model_dir))
+
+    elapsed = time.perf_counter() - start_time
+    logger.info("Fine-tuning complete in %.2fs, model saved to %s", elapsed, model_dir)
+    logger.debug("Model and processor saved to %s", model_dir)
 
     return model_dir
 
