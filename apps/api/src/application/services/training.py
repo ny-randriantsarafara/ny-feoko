@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +20,7 @@ from transformers import (
 )
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16_000
 DECODER_MAX_TOKENS = 448
