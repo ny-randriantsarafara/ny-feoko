@@ -173,10 +173,13 @@ def fine_tune(
 
 def push_to_hub(model_dir: Path, repo_id: str) -> None:
     """Push a saved model and processor to HuggingFace Hub."""
+    logger.info("Pushing model to HuggingFace Hub: %s -> %s", model_dir, repo_id)
     processor = WhisperProcessor.from_pretrained(str(model_dir))
     model = WhisperForConditionalGeneration.from_pretrained(str(model_dir))
+    logger.debug("Model and processor loaded from %s", model_dir)
     processor.push_to_hub(repo_id)
     model.push_to_hub(repo_id)
+    logger.info("Push complete: %s", repo_id)
 
 
 def redraft_pending(
