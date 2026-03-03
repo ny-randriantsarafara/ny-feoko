@@ -75,3 +75,25 @@ class TestLogging:
         assert len(root.handlers) == 1
         handler = root.handlers[0]
         assert any(isinstance(f, TraceContextFilter) for f in handler.filters)
+
+
+class TestCliLogging:
+    def test_configure_cli_logging_sets_level(self) -> None:
+        from infra.telemetry.logging import configure_cli_logging
+
+        configure_cli_logging(verbose=False)
+        root = logging.getLogger()
+        assert root.level == logging.INFO
+
+        configure_cli_logging(verbose=True)
+        assert root.level == logging.DEBUG
+
+    def test_configure_cli_logging_uses_rich_handler(self) -> None:
+        from infra.telemetry.logging import configure_cli_logging
+        from rich.logging import RichHandler
+
+        configure_cli_logging(verbose=True)
+        root = logging.getLogger()
+
+        assert len(root.handlers) == 1
+        assert isinstance(root.handlers[0], RichHandler)

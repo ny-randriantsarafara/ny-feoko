@@ -6,6 +6,7 @@ import logging
 import sys
 
 from opentelemetry import trace
+from rich.logging import RichHandler
 
 
 class TraceContextFilter(logging.Filter):
@@ -43,3 +44,33 @@ def configure_logging(level: str = "INFO") -> None:
     handler.setFormatter(formatter)
 
     root.addHandler(handler)
+
+
+def configure_cli_logging(verbose: bool = False) -> None:
+    """Configure logging for CLI with Rich console output.
+
+    Args:
+        verbose: If True, set DEBUG level. Otherwise INFO.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    # Clear existing handlers
+    root.handlers.clear()
+
+    handler = RichHandler(
+        show_time=True,
+        show_path=False,
+        markup=True,
+        rich_tracebacks=True,
+    )
+    handler.setLevel(level)
+
+    root.addHandler(handler)
+
+    # Quiet noisy libraries
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("datasets").setLevel(logging.WARNING)
+    logging.getLogger("transformers").setLevel(logging.INFO)
