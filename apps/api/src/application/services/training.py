@@ -312,6 +312,9 @@ def _load_training_data(
     processor: WhisperProcessor,
     config: TrainingConfig,
 ) -> DatasetDict:
+    logger.debug("Loading training data from %s", data_dir)
+    load_start = time.perf_counter()
+
     ds = load_dataset("audiofolder", data_dir=str(data_dir))
 
     if not isinstance(ds, DatasetDict):
@@ -320,6 +323,12 @@ def _load_training_data(
     if "test" not in ds:
         split = ds["train"].train_test_split(test_size=0.1, seed=42)
         ds = DatasetDict({"train": split["train"], "test": split["test"]})
+
+    logger.debug(
+        "Dataset split: train=%d, test=%d",
+        len(ds["train"]),
+        len(ds["test"]),
+    )
 
     tokenizer = processor.tokenizer
     feature_extractor = processor.feature_extractor
@@ -351,6 +360,9 @@ def _load_training_data(
         batch_size=32,
         remove_columns=ds["train"].column_names,
     )
+
+    elapsed = time.perf_counter() - load_start
+    logger.debug("Dataset preprocessing complete in %.2fs", elapsed)
 
     return ds
 
