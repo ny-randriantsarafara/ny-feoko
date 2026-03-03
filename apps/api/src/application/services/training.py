@@ -294,6 +294,10 @@ def _transcribe_clip(
     if sr != SAMPLE_RATE:
         raise RuntimeError(f"Expected {SAMPLE_RATE}Hz audio, got {sr}Hz in {wav_path}")
 
+    duration = len(audio) / sr
+    logger.debug("Audio loaded: %s, duration=%.2fs, sr=%d", wav_path.name, duration, sr)
+    inference_start = time.perf_counter()
+
     inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
     input_features = inputs.input_features.to(device)
 
@@ -303,6 +307,9 @@ def _transcribe_clip(
             forced_decoder_ids=forced_decoder_ids,
             max_new_tokens=DECODER_MAX_TOKENS_WITH_MARGIN,
         )
+
+    inference_time = time.perf_counter() - inference_start
+    logger.debug("Inference complete in %.3fs", inference_time)
 
     return processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
 
