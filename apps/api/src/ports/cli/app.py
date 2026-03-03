@@ -7,8 +7,17 @@ from pathlib import Path
 import typer
 
 from domain.exceptions import MissingConfigError, RunNotFoundError, SyncError
+from infra.telemetry.logging import configure_cli_logging
 
 app = typer.Typer(help="Ambara -- Malagasy ASR data pipeline and training platform.")
+
+
+@app.callback()
+def main_callback(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Configure CLI before running commands."""
+    configure_cli_logging(verbose=verbose)
 
 
 @app.command()
@@ -144,9 +153,7 @@ def redraft(
     total_updated = 0
     for run_id in run_ids:
         label = run_repo.resolve_label(run_id)
-        pending = clip_repo.find_by_run(
-            run_id, status=ClipStatus.PENDING, columns="id,file_name"
-        )
+        pending = clip_repo.find_by_run(run_id, status=ClipStatus.PENDING, columns="id,file_name")
         if not pending:
             typer.echo(f"No pending clips for {label}")
             continue
@@ -158,9 +165,7 @@ def redraft(
             if stored.exists() and (stored / "clips").is_dir():
                 source_dir = stored
 
-        transcriptions = get_transcriptions(
-            model, source_dir, pending, resolved_device, language
-        )
+        transcriptions = get_transcriptions(model, source_dir, pending, resolved_device, language)
         for clip_id, text in transcriptions:
             clip_repo.update_transcription(clip_id, text)
             total_updated += 1
