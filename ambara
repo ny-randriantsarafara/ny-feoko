@@ -13,6 +13,7 @@ case "${1:-help}" in
   train)      shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app train "$@" ;;
   delete-run) shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app delete-run "$@" ;;
   api)        shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app api "$@" ;;
+  purge-api-cache) shift; exec env PYTHONPATH="$API_SRC" "$PYTHON" -m ports.cli.app purge-api-cache "$@" ;;
   editor)
     shift
     echo "Starting transcript editor at http://localhost:3000"
@@ -28,10 +29,11 @@ case "${1:-help}" in
              echo "  sync            Sync extraction run to Supabase"
              echo "  export          Export corrected clips as a training dataset"
              echo "  redraft         Re-transcribe pending clips"
-             echo "  train           Fine-tune Whisper on exported training data"
-             echo "  delete-run      Delete a run and all its data from Supabase"
-             echo "  api             Start the API worker"
-             echo "  editor          Start the web editor"
+              echo "  train           Fine-tune Whisper on exported training data"
+              echo "  delete-run      Delete a run and all its data from Supabase"
+              echo "  api             Start the API worker"
+              echo "  purge-api-cache Clear API model and bytecode caches"
+              echo "  editor          Start the web editor"
              echo ""
              echo "Setup:"
              echo "  setup           Create venv and install all packages"

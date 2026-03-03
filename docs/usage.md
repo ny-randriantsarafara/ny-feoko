@@ -323,6 +323,16 @@ Remove a single run and all its clips, edit history, and storage files:
 
 Shows clip count and corrected count before confirming.
 
+### Purge API cache
+
+Clear API in-memory model cache and Python bytecode cache files under `apps/api/`:
+
+```bash
+./ambara purge-api-cache
+```
+
+Use this when you want the next ingest request to reload ML models from scratch, or to clean stale `__pycache__`/`.pyc` files in the API package.
+
 ## Transcript editor (Supabase)
 
 A web app for correcting draft transcripts from Supabase.

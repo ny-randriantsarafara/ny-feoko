@@ -95,11 +95,13 @@ def run_pipeline(
     for chunk_start, audio in stream_chunks(
         input_file, chunk_duration, sample_rate=sample_rate
     ):
-        segments = vad.detect(audio, sample_rate)
-
-        for seg in segments:
-            seg.start_sec += chunk_start
-            seg.end_sec += chunk_start
+        segments = [
+            AudioSegment(
+                start_sec=seg.start_sec + chunk_start,
+                end_sec=seg.end_sec + chunk_start,
+            )
+            for seg in vad.detect(audio, sample_rate)
+        ]
 
         candidates = group_segments(
             segments, audio, sample_rate, source, audio_start_sec=chunk_start

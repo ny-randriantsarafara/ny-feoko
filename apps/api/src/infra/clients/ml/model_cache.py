@@ -49,6 +49,24 @@ def get_models(
         return _instance
 
 
+def clear_models() -> bool:
+    """Clear cached ML models in the current process.
+
+    Returns True when a cached instance existed and was cleared.
+    """
+    global _instance  # noqa: PLW0603
+    with _lock:
+        had_instance = _instance is not None
+        _instance = None
+
+    if had_instance:
+        logger.info("ML model cache cleared.")
+    else:
+        logger.info("ML model cache already empty.")
+
+    return had_instance
+
+
 def _load_models(
     device: str,
     *,

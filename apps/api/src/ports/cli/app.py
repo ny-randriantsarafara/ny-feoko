@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
 import torch
@@ -14,6 +15,27 @@ from infra.telemetry.logging import configure_cli_logging
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Ambara -- Malagasy ASR data pipeline and training platform.")
+
+
+def _purge_python_cache(api_root: Path) -> tuple[int, int]:
+    pycache_dirs = sorted(
+        (path for path in api_root.rglob("__pycache__") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    removed_dirs = 0
+    for cache_dir in pycache_dirs:
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+            removed_dirs += 1
+
+    removed_files = 0
+    for bytecode_file in [*api_root.rglob("*.pyc"), *api_root.rglob("*.pyo")]:
+        if bytecode_file.exists():
+            bytecode_file.unlink()
+            removed_files += 1
+
+    return removed_dirs, removed_files
 
 
 @app.callback()
@@ -245,6 +267,24 @@ def api(
         host=host,
         port=port,
         factory=True,
+    )
+
+
+@app.command("purge-api-cache")
+def purge_api_cache() -> None:
+    """Clear API in-memory model cache and Python bytecode caches."""
+    from infra.clients.ml.model_cache import clear_models
+
+    api_root = Path(__file__).resolve().parents[3]
+    had_models = clear_models()
+    removed_dirs, removed_files = _purge_python_cache(api_root)
+
+    model_state = "cleared" if had_models else "already empty"
+    typer.echo(
+        "Purged API cache: "
+        f"model cache {model_state}, "
+        f"removed {removed_dirs} __pycache__ dirs, "
+        f"removed {removed_files} bytecode files"
     )
 
 
