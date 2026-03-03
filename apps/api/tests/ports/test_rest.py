@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from domain.entities.job import Job, JobStatus, JobType
 from domain.entities.run import Run, RunType
 from ports.rest.routes.jobs import router as jobs_router
+from ports.rest.routes.metrics import router as metrics_router
 from ports.rest.routes.runs import router as runs_router
 
 
@@ -18,6 +19,7 @@ def _create_test_app() -> FastAPI:
     app = FastAPI()
     app.include_router(runs_router)
     app.include_router(jobs_router)
+    app.include_router(metrics_router)
     return app
 
 
@@ -104,3 +106,21 @@ class TestJobsRoute:
         response = client.get("/jobs/missing")
 
         assert response.status_code == 404
+
+
+class TestMonitoringRoutes:
+    def test_health_returns_healthy(self) -> None:
+        app = _create_test_app()
+        client = TestClient(app)
+        response = client.get("/health")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "healthy"}
+
+    def test_metrics_returns_prometheus_format(self) -> None:
+        app = _create_test_app()
+        client = TestClient(app)
+        response = client.get("/metrics")
+
+        assert response.status_code == 200
+        assert "text/plain" in response.headers["content-type"]

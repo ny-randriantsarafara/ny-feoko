@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,11 +15,13 @@ from rich.console import Console
 from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
+    TrainerCallback,
     WhisperForConditionalGeneration,
     WhisperProcessor,
 )
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16_000
 DECODER_MAX_TOKENS = 448
@@ -44,6 +49,33 @@ class TrainingConfig:
         return device.startswith("cuda")
 
 
+class LoggingCallback(TrainerCallback):
+    """Emit structured logs during training for observability."""
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        logger.info(
+            "Training started: %d epochs, %d total steps",
+            args.num_train_epochs,
+            state.max_steps,
+        )
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs:
+            logger.debug("Step %d: %s", state.global_step, logs)
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics:
+            wer = metrics.get("eval_wer", 0)
+            logger.info("Eval at step %d: WER=%.4f", state.global_step, wer)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        logger.info(
+            "Training complete: %d steps, best WER=%.4f",
+            state.global_step,
+            state.best_metric or 0,
+        )
+
+
 def fine_tune(
     config: TrainingConfig,
     data_dir: Path,
@@ -51,6 +83,15 @@ def fine_tune(
     device: str,
 ) -> Path:
     """Fine-tune a Whisper model and save it to output_dir. Returns model path."""
+    logger.info(
+        "Fine-tuning started: model=%s, epochs=%d, batch_size=%d, device=%s",
+        config.base_model,
+        config.epochs,
+        config.batch_size,
+        device,
+    )
+    start_time = time.perf_counter()
+
     processor = WhisperProcessor.from_pretrained(
         config.base_model, language=config.language, task=config.task
     )
@@ -59,7 +100,20 @@ def fine_tune(
     model.generation_config.task = config.task
     model.generation_config.forced_decoder_ids = None
 
+    logger.debug("Model and processor loaded from %s", config.base_model)
+    if device.startswith("cuda") and torch.cuda.is_available():
+        logger.debug(
+            "GPU memory allocated: %.2f MB",
+            torch.cuda.memory_allocated() / 1024 / 1024,
+        )
+
     dataset = _load_training_data(data_dir, processor, config)
+
+    logger.debug(
+        "Dataset loaded: train=%d samples, test=%d samples",
+        len(dataset["train"]),
+        len(dataset["test"]),
+    )
 
     collator = _WhisperDataCollator(processor=processor)
     compute_metrics = _make_compute_metrics(processor)
@@ -90,6 +144,8 @@ def fine_tune(
         use_cpu=device == "cpu",
     )
 
+    logger.debug("Training config: fp16=%s, use_cpu=%s", use_fp16, device == "cpu")
+
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
@@ -98,6 +154,7 @@ def fine_tune(
         data_collator=collator,
         compute_metrics=compute_metrics,
         processing_class=processor.feature_extractor,
+        callbacks=[LoggingCallback()],
     )
 
     trainer.train()
@@ -107,15 +164,22 @@ def fine_tune(
     trainer.save_model(str(model_dir))
     processor.save_pretrained(str(model_dir))
 
+    elapsed = time.perf_counter() - start_time
+    logger.info("Fine-tuning complete in %.2fs, model saved to %s", elapsed, model_dir)
+    logger.debug("Model and processor saved to %s", model_dir)
+
     return model_dir
 
 
 def push_to_hub(model_dir: Path, repo_id: str) -> None:
     """Push a saved model and processor to HuggingFace Hub."""
+    logger.info("Pushing model to HuggingFace Hub: %s -> %s", model_dir, repo_id)
     processor = WhisperProcessor.from_pretrained(str(model_dir))
     model = WhisperForConditionalGeneration.from_pretrained(str(model_dir))
+    logger.debug("Model and processor loaded from %s", model_dir)
     processor.push_to_hub(repo_id)
     model.push_to_hub(repo_id)
+    logger.info("Push complete: %s", repo_id)
 
 
 def redraft_pending(
@@ -130,9 +194,18 @@ def redraft_pending(
     Note: this function does NOT write to the database. It returns transcriptions
     and the caller (use-case) handles persistence.
     """
+    logger.info(
+        "Redraft started: %d clips, model=%s, device=%s",
+        len(pending_clips),
+        model_path,
+        device,
+    )
+    start_time = time.perf_counter()
+
     processor = WhisperProcessor.from_pretrained(model_path)
     model = WhisperForConditionalGeneration.from_pretrained(model_path)
     model.to(device).eval()
+    logger.debug("Model loaded and moved to %s", device)
 
     forced_decoder_ids = processor.get_decoder_prompt_ids(
         language=language, task="transcribe"
@@ -147,13 +220,22 @@ def redraft_pending(
         wav_path = source_dir / file_name
 
         if not wav_path.exists():
+            logger.debug("Skipped missing file: %s", wav_path)
             skipped += 1
             continue
 
         text = _transcribe_clip(wav_path, processor, model, device, forced_decoder_ids)
         results.append((clip["id"], text))
         updated += 1
+        logger.debug("Processed clip %s: %d chars", file_name, len(text))
 
+    elapsed = time.perf_counter() - start_time
+    logger.info(
+        "Redraft complete in %.2fs: %d updated, %d skipped",
+        elapsed,
+        updated,
+        skipped,
+    )
     return updated, skipped
 
 
@@ -165,9 +247,18 @@ def get_transcriptions(
     language: str = "mg",
 ) -> list[tuple[str, str]]:
     """Transcribe clips and return list of (clip_id, text) pairs."""
+    logger.info(
+        "Transcription started: %d clips, model=%s, device=%s",
+        len(pending_clips),
+        model_path,
+        device,
+    )
+    start_time = time.perf_counter()
+
     processor = WhisperProcessor.from_pretrained(model_path)
     model = WhisperForConditionalGeneration.from_pretrained(model_path)
     model.to(device).eval()
+    logger.debug("Model loaded and moved to %s", device)
 
     forced_decoder_ids = processor.get_decoder_prompt_ids(
         language=language, task="transcribe"
@@ -177,10 +268,18 @@ def get_transcriptions(
     for clip in pending_clips:
         wav_path = source_dir / clip["file_name"]
         if not wav_path.exists():
+            logger.debug("Skipped missing file: %s", wav_path)
             continue
         text = _transcribe_clip(wav_path, processor, model, device, forced_decoder_ids)
+        logger.debug("Transcribed clip %s: %d chars", clip["file_name"], len(text))
         results.append((clip["id"], text))
 
+    elapsed = time.perf_counter() - start_time
+    logger.info(
+        "Transcription complete in %.2fs: %d clips processed",
+        elapsed,
+        len(results),
+    )
     return results
 
 
@@ -195,6 +294,10 @@ def _transcribe_clip(
     if sr != SAMPLE_RATE:
         raise RuntimeError(f"Expected {SAMPLE_RATE}Hz audio, got {sr}Hz in {wav_path}")
 
+    duration = len(audio) / sr
+    logger.debug("Audio loaded: %s, duration=%.2fs, sr=%d", wav_path.name, duration, sr)
+    inference_start = time.perf_counter()
+
     inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
     input_features = inputs.input_features.to(device)
 
@@ -205,6 +308,9 @@ def _transcribe_clip(
             max_new_tokens=DECODER_MAX_TOKENS_WITH_MARGIN,
         )
 
+    inference_time = time.perf_counter() - inference_start
+    logger.debug("Inference complete in %.3fs", inference_time)
+
     return processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
 
 
@@ -213,6 +319,9 @@ def _load_training_data(
     processor: WhisperProcessor,
     config: TrainingConfig,
 ) -> DatasetDict:
+    logger.debug("Loading training data from %s", data_dir)
+    load_start = time.perf_counter()
+
     ds = load_dataset("audiofolder", data_dir=str(data_dir))
 
     if not isinstance(ds, DatasetDict):
@@ -221,6 +330,12 @@ def _load_training_data(
     if "test" not in ds:
         split = ds["train"].train_test_split(test_size=0.1, seed=42)
         ds = DatasetDict({"train": split["train"], "test": split["test"]})
+
+    logger.debug(
+        "Dataset split: train=%d, test=%d",
+        len(ds["train"]),
+        len(ds["test"]),
+    )
 
     tokenizer = processor.tokenizer
     feature_extractor = processor.feature_extractor
@@ -252,6 +367,9 @@ def _load_training_data(
         batch_size=32,
         remove_columns=ds["train"].column_names,
     )
+
+    elapsed = time.perf_counter() - load_start
+    logger.debug("Dataset preprocessing complete in %.2fs", elapsed)
 
     return ds
 

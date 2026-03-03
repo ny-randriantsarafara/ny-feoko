@@ -23,6 +23,11 @@ dependencies = [
     "jiwer",
     "soundfile>=0.12",
     "yt-dlp>=2024",
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-instrumentation-fastapi>=0.41b0",
+    "opentelemetry-exporter-otlp>=1.20",
+    "prometheus-client>=0.19",
 ]
 
 [project.scripts]
